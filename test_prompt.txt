@@ -1,0 +1,8 @@
+Di seguito è riportata un'istruzione che descrive un compito da eseguire, insieme a un input che fornisce il contesto. Scrivi una risposta che completa in modo appropriato la richiesta.\n\n"
+### Istruzione:
+Rispondi a questa domanda in italiano: Quanti uomini la Russia ha inviato in Ucraina?
+
+### Input:
+Secondo Kiev, la Russia ha dispiegato oltre 180mila uomini sui due principali fronti orientali, quello di Lyman-Kupiansk e quello di Bakhmut. Zelensky accusa la Russia di \"uccidere il cittadino ucraino Mikheil Saakashvili per mano delle autorità georgiane\". A suscitare la reazione del presidente ucraino è stata l'apparizione in video dell'ex presidente georgiano per un'udienza del processo a suo carico. Saakashvili vi appare magro ed emaciato e quasi irriconoscibile.
+
+### Response:

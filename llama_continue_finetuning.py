@@ -49,7 +49,7 @@ from utils.config_utils import (
     generate_peft_config,
     generate_dataset_config,
 )
-from peft import get_peft_model, TaskType, prepare_model_for_int8_training
+from peft import get_peft_model, TaskType, prepare_model_for_int8_training, PeftModel
 import configs
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
@@ -89,6 +89,36 @@ def main(**kwargs):
     
     # Calculate gradient accumulation steps
     gradient_accumulation_steps = train_config.batch_size_training // train_config.micro_batch_size
+
+    last_epoch, last_step, optimizer_state, scheduler_state, scaler_state = 0, 0, None, None, None
+    if train_config.checkpoint is not None and os.path.exists(train_config.checkpoint + "/model.pkl"):
+
+        # No! perchè, usando peft, carica l'adapter aggiornato al checkpoint
+        # model_checkpoint = torch.load(train_config.checkpoint + "/model.pkl")
+        # model.load_state_dict(checkpoint['model_state_dict'])
+        # print("Model loaded from checkpoint : " + train_config.checkpoint)
+
+        checkpoint = torch.load(train_config.checkpoint + "/checkpoint.pkl")
+        if 'optimizer_state_dict' in checkpoint and checkpoint['optimizer_state_dict'] is not None:
+            optimizer_state = checkpoint['optimizer_state_dict']
+            print("Optimizer loaded from checkpoint : " + train_config.checkpoint)
+
+        if 'scheduler' in checkpoint  and checkpoint['scheduler'] is not None:
+            scheduler_state = checkpoint['scheduler']
+            print("Scheduler loaded from checkpoint : " + train_config.checkpoint)
+
+        if 'scaler' in checkpoint and checkpoint['scaler'] is not None:
+            scaler_state = checkpoint['scaler']
+            print("Scaler loaded from checkpoint : " + train_config.checkpoint)
+
+        last_epoch = checkpoint.get('epoch', 0)
+        last_step = checkpoint.get('step', 0)
+
+        '''torch.save({'epoch': 1, 'step': 40718, 'optimizer_state_dict': optimizer_state,
+                    'loss': 0.6, 'scheduler': None, 'scaler': None}, train_config.output_dir + "/checkpoint.pkl")'''
+
+        del checkpoint
+        clear_gpu_cache()
      
     # Load the pre-trained model and setup its configuration
     model = LlamaForCausalLM.from_pretrained(
@@ -109,15 +139,18 @@ def main(**kwargs):
 
     # Load the tokenizer and add special tokens
     tokenizer = LlamaTokenizer.from_pretrained(train_config.model_name)
-    tokenizer.add_special_tokens(
-            {
-            
-                "pad_token": "<PAD>",
-            }
-        )
+    tokenizer.add_special_tokens({"pad_token": "<PAD>",})
+
     if train_config.use_peft:
         peft_config = generate_peft_config(train_config, kwargs)
-        model = get_peft_model(model, peft_config)
+        # model = get_peft_model(model, peft_config)  # when training from scratch
+        model = PeftModel.from_pretrained(model, train_config.checkpoint)
+        print("Resume PEFT model from checkpoint: " + train_config.checkpoint)
+
+        for name, param in model.named_parameters():
+            if 'lora' in name or 'Lora' in name:
+                param.requires_grad = True
+
         model.print_trainable_parameters()
     
     #setting up FSDP if enable_fsdp is enabled
@@ -160,7 +193,7 @@ def main(**kwargs):
         split="test",
     )
     if not train_config.enable_fsdp or rank == 0:
-            print(f"--> Validation Set Length = {len(dataset_val)}")
+        print(f"--> Validation Set Length = {len(dataset_val)}")
 
     train_sampler = None
     val_sampler = None
@@ -189,6 +222,11 @@ def main(**kwargs):
         collate_fn=default_data_collator,
     )
 
+    print("Resuming from " + str(last_epoch) + "." + str(last_step) + ". Total Epochs = " + str(train_config.num_epochs))
+    if last_epoch > train_config.num_epochs or (last_epoch == train_config.num_epochs and last_step == len(train_dataloader)):
+        raise Exception("Resuming from epoch '" + str(last_epoch) + "@" + str(last_step) + "' to epoch " +
+                        str(train_config.num_epochs) + "@" + str(last_step) + "'. Increase 'num_epochs'")
+
     if train_config.run_validation:
         eval_dataloader = torch.utils.data.DataLoader(
             dataset_val,
@@ -215,7 +253,15 @@ def main(**kwargs):
             lr=train_config.lr,
             weight_decay=0.0,
         )
+
+    if optimizer_state is not None:
+        optimizer.load_state_dict(optimizer_state)
+        print("Optimizer loaded from checkpoint : " + train_config.checkpoint)
+
     scheduler = StepLR(optimizer, step_size=1, gamma=train_config.gamma)
+    if scheduler_state is not None:
+        scheduler.load_state_dict(scheduler_state)
+        print("Scheduler loaded from checkpoint : " + train_config.checkpoint)
 
     wandb_project = "llama-2-7b-8bit-qiansita"
     wandb_config = {"learning_rate": train_config.lr, "architecture": "LLAMA-2-7B-8bit",
@@ -242,6 +288,7 @@ def main(**kwargs):
             fsdp_config if train_config.enable_fsdp else None,
             local_rank if train_config.enable_fsdp else None,
             rank if train_config.enable_fsdp else None,
+            resume_from=(last_epoch, last_step, scaler_state),
             wandb=wdb
         )
         if not train_config.enable_fsdp or rank==0:

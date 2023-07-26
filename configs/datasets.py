@@ -6,7 +6,7 @@ from dataclasses import dataclass
     
 @dataclass
 class samsum_dataset:
-    dataset: str =  "samsum_dataset"
+    dataset: str = "samsum_dataset"
     train_split: str = "train"
     test_split: str = "validation"
     input_length: int = 2048
@@ -26,3 +26,19 @@ class alpaca_dataset:
     train_split: str = "train"
     test_split: str = "val"
     data_path: str = "ft_datasets/alpaca_data.json"
+
+
+@dataclass
+class qiansita_dataset:
+    dataset: str = "qiansita_dataset"
+    train_split: str = "train"
+    test_split: str = "valid"
+    data_path: str = "/mnt/data/qi_datasets/qiansita_data.768.json"
+
+
+@dataclass
+class qisumita_dataset:
+    dataset: str = "qisumita_dataset"
+    train_split: str = "train"
+    test_split: str = "valid"
+    data_path: str = "/mnt/data/qi_datasets/qisumita_data.1024.json"

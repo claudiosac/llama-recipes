@@ -3,6 +3,7 @@
 
 import os
 import sys
+import math
 from typing import List
 
 import fire
@@ -34,10 +35,9 @@ from torch.distributed.fsdp.sharded_grad_scaler import ShardedGradScaler
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from policies import bfSixteen, fpSixteen,bfSixteen_mixed, get_llama_wrapper
+from copy import deepcopy
 
 scaler = ShardedGradScaler()
-
-
 
 
 def set_tokenizer_params(tokenizer: LlamaTokenizer):
@@ -48,7 +48,8 @@ def set_tokenizer_params(tokenizer: LlamaTokenizer):
 def byte2mb(x):
     return int(x / 2**20)
 
-def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps, train_config, fsdp_config=None, local_rank=None, rank=None):
+def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps,
+          train_config, fsdp_config=None, local_rank=None, rank=None, wandb=None, resume_from=None):
     """
     Trains the model on the given dataloader
     
@@ -66,8 +67,18 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
     
     Returns: results dictionary containing average training and validation perplexity and loss
     """
+
+    print(train_config.output_dir)
+
     # Create a gradient scaler for fp16
     scaler = torch.cuda.amp.GradScaler() if train_config.use_fp16 else None
+
+    last_epoch, last_step = 0, 0
+    if resume_from is not None and len(resume_from) == 3:
+        last_epoch, last_step, scaler_state = resume_from
+        if scaler_state is not None:
+            scaler.load_state_dict(scaler_state)
+            print("Scaler loaded from checkpoint : " + train_config.checkpoint)
 
     train_prep = []
     train_loss = []
@@ -75,18 +86,28 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
     val_loss =[]
     results = {}
     best_val_loss = float("inf")
-    for epoch in range(train_config.num_epochs):
+    for epoch in range(0, train_config.num_epochs):
+
+        if epoch < (last_epoch - 1) or (epoch == (last_epoch - 1) and last_step == len(train_dataloader)):
+            print("Training Epoch " + str(epoch) + " SKIPPED!!")
+            continue
+
         with MemoryTrace() as memtrace:  # track the memory usage
             model.train()
             total_loss = 0.0
             data_set_len = 0
-            
-            for step, batch in enumerate(tqdm(train_dataloader,colour="blue", desc=f"Training Epoch{epoch}")):
+
+            for step, batch in enumerate(tqdm(train_dataloader,colour="blue", desc=f"Training Epoch {epoch}")):
+
+                if epoch == (last_epoch - 1) and step <= (last_step - 1):
+                    continue
+
                 for key in batch.keys():
                     if train_config.enable_fsdp:
                         batch[key] = batch[key].to(local_rank)
-                    elif not train_config.quantization:
-                        batch[key] = batch[key].to('cuda')       
+                    else:
+                        batch[key] = batch[key].to('cuda')
+                    # print(key, batch[key].device)
                 outputs = model(**batch)
                 loss = outputs.loss
                 loss = loss / gradient_accumulation_steps
@@ -100,6 +121,15 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         scaler.step(optimizer)
                         scaler.update()
                         optimizer.zero_grad()
+
+                        if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
+                            loss_value = loss.detach().float().item()
+                            perplexity_value = total_loss.item() / (gradient_accumulation_steps * (step+1))
+                            wandb.log({"train/step_loss": round(loss_value, 6),
+                                       "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
+                                       "train/step": (step+1)+(epoch*len(train_dataloader)),
+                                       "train/lr": optimizer.param_groups[0].get('lr', 0),
+                                       "train/perplexity": math.exp(perplexity_value)})
                 else:
                     # regular backpropagation when fp16 is not used
                     loss.backward()
@@ -107,8 +137,25 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         optimizer.step()
                         lr_scheduler.step()
                         optimizer.zero_grad()
-                        
-                print(f"\n step {step} is completed and loss is {loss.detach().float()}")
+
+                        if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
+                            loss_value = loss.detach().float().item()
+                            perplexity_value = total_loss.item() / (gradient_accumulation_steps * (step + 1))
+                            wandb.log({"train/step_loss": round(loss_value, 6),
+                                       "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
+                                       "train/step": (step+1)+(epoch*len(train_dataloader)),
+                                       "train/lr": lr_scheduler.get_lr(),
+                                       "train/perplexity": math.exp(perplexity_value)})
+
+                if (step + 1) % (gradient_accumulation_steps * train_config.save_interval) == 0 or step == len(train_dataloader) - 1:
+                    save_path = train_config.output_dir + "/checkpoint_" + str(epoch+1) + "." + str(step+1) + "." + str((step+1)+(epoch*len(train_dataloader)))
+                    model.save_pretrained(save_path)
+
+                    torch.save({'epoch': epoch+1, 'step': step+1, 'model_state_dict': model.state_dict()}, save_path + "/model.pkl")
+                    torch.save({'epoch': epoch+1, 'step': step+1, 'optimizer_state_dict': optimizer.state_dict(),
+                                'loss': total_loss/(gradient_accumulation_steps * (step + 1)),
+                                'scheduler': lr_scheduler.state_dict(), 'scaler': scaler.state_dict()},
+                               save_path + "/checkpoint.pkl")
 
         # Reducing total_loss across all devices if there's more than one CUDA device
         if torch.cuda.device_count() > 1 and train_config.enable_fsdp:
@@ -123,23 +170,20 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
         print(f"Max CUDA memory reserved was {memtrace.max_reserved} GB")
         print(f"Cuda Malloc retires : {memtrace.cuda_malloc_retires}")
         print(f"CPU Total Peak Memory consumed during the train (max): {memtrace.cpu_peaked + memtrace.cpu_begin} GB")
+
+        clear_gpu_cache()
             
         if train_config.run_validation:
-            eval_ppl, eval_epoch_loss = evaluation(model, train_config, eval_dataloader, rank, tokenizer)   
+            eval_ppl, eval_epoch_loss = evaluation(model, train_config, eval_dataloader, rank, tokenizer, epoch, wandb=wandb)
             if train_config.save_model and eval_epoch_loss < best_val_loss:
                 
-                if  train_config.use_peft:
-                    
-                    print(f"we are in the saving the PEFT modules")
+                if train_config.use_peft:
                     model.save_pretrained(train_config.output_dir)   
                     print(f"PEFT modules are saved in {train_config.output_dir} directory")
                     
                 else:
                     if not train_config.use_peft and fsdp_config.checkpoint_type == StateDictType.FULL_STATE_DICT:
-                        
-                        model_checkpointing.save_model_checkpoint(
-                            model, optimizer, rank, train_config, epoch=1
-                        )
+                        model_checkpointing.save_model_checkpoint(model, optimizer, rank, train_config, epoch=1)
                     elif not train_config.use_peft and fsdp_config.checkpoint_type == StateDictType.SHARDED_STATE_DICT:
                         print(" we are about to save the models *******")
                         
@@ -147,12 +191,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         if train_config.save_optimizer:
                             model_checkpointing.save_model_and_optimizer_sharded(model, rank, train_config, optim=optimizer)
 
-                    if not train_config.use_peft and  train_config.save_optimizer:
-                        model_checkpointing.save_optimizer_checkpoint(
-                            model, optimizer, rank, train_config, epoch=1
-                        )   
-                                
-            
+                    if not train_config.use_peft and train_config.save_optimizer:
+                        model_checkpointing.save_optimizer_checkpoint(model, optimizer, rank, train_config, epoch=1)
+
             if local_rank == 0 and eval_epoch_loss < best_val_loss:
                 best_val_loss = eval_epoch_loss
                 print(f"best eval loss on epoch {epoch} is {best_val_loss}")
@@ -172,11 +213,11 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
     if train_config.run_validation:
         results['avg_eval_prep'] = avg_eval_prep
         results['avg_eval_loss'] = avg_eval_loss
-        
 
     return results
 
-def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
+
+def evaluation(model, train_config, eval_dataloader, local_rank, tokenizer, epoch, wandb=None):
     """
     Evaluates the model on the given dataloader
     
@@ -193,7 +234,7 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
     eval_loss = 0.0  # Initialize evaluation loss
     eval_dataset_len = 0
     with MemoryTrace() as memtrace:
-        for step, batch in enumerate(tqdm(eval_dataloader,colour="green", desc="evaluating Epoch")):
+        for step, batch in enumerate(tqdm(eval_dataloader,colour="green", desc=f"Training Epoch {epoch}")):
             for key in batch.keys():
                 if train_config.enable_fsdp:
                     batch[key] = batch[key].to(local_rank)
@@ -206,13 +247,19 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
                 loss = outputs.loss
                 eval_loss += loss.detach().float()
                 first_key = next(iter(batch))
-                eval_dataset_len+= len(batch[first_key])
+                eval_dataset_len += len(batch[first_key])
                 
             # Decode predictions and add to evaluation predictions list
             preds = torch.argmax(outputs.logits, -1)
             eval_preds.extend(
                 tokenizer.batch_decode(preds.detach().cpu().numpy(), skip_special_tokens=True)
             )
+
+            if wandb is not None and step > 0 and (step % train_config.eval_log_interval == 0 or step == len(eval_dataloader) - 1):
+                loss_value = loss.detach().float().item()
+                perplexity_value = eval_loss.item() / (train_config.eval_log_interval * step)
+                wandb.log({"eval/step_loss": round(loss_value, 6), "eval/loss": round(perplexity_value, 6), "eval/epoch": epoch + 1,
+                           "eval/step": (step+1)+(epoch*len(eval_dataloader)), "eval/perplexity": math.exp(perplexity_value)})
     
     # If there's more than one CUDA device, reduce evaluation loss across all devices
     if torch.cuda.device_count() > 1 and train_config.enable_fsdp:
@@ -225,6 +272,7 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
     # Print evaluation metrics
     print(f" {eval_ppl=} {eval_epoch_loss=}")
     return eval_ppl, eval_epoch_loss
+
 
 def freeze_transformer_layers(model, num_layer):
    for i, layer in enumerate(model.model.layers):
@@ -272,6 +320,7 @@ def get_parameter_dtypes(model):
         parameter_dtypes[name] = parameter.dtype
     return parameter_dtypes
 
+
 def print_model_size(model, config, rank: int = 0) -> None:
     """
     Print model name, the number of trainable parameters and initialization time.
@@ -289,19 +338,16 @@ def print_model_size(model, config, rank: int = 0) -> None:
         print(f"\n--> {config.model_name} has {total_params / 1e6} Million params\n")
 
 
-
-
 def get_policies(cfg, rank):
     """Get the policies for mixed precision and fsdp wrapping"""
-    
-    verify_bfloat_support = (
-    torch.version.cuda
-    and torch.cuda.is_bf16_supported()
-    and packaging.version.parse(torch.version.cuda).release >= (11, 0)
-    and dist.is_nccl_available()
-    and nccl.version() >= (2, 10)
-    )
 
+    verify_bfloat_support = (
+            torch.version.cuda
+            and torch.cuda.is_bf16_supported()
+            and packaging.version.parse(torch.version.cuda).release >= (11, 0)
+            and dist.is_nccl_available()
+            and nccl.version() >= (2, 10)
+    )
 
     mixed_precision_policy = None
     wrapping_policy = None

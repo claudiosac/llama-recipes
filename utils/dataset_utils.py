@@ -9,6 +9,8 @@ from ft_datasets import (
     get_grammar_dataset,
     get_alpaca_dataset,
     get_samsum_dataset,
+    get_qiansita_dataset,
+    get_qisumita_dataset,
 )
 from typing import Optional
 
@@ -17,6 +19,8 @@ DATASET_PREPROC = {
     "alpaca_dataset": partial(get_alpaca_dataset, max_words=224),
     "grammar_dataset": get_grammar_dataset,
     "samsum_dataset": get_samsum_dataset,
+    "qiansita_dataset": partial(get_qiansita_dataset, max_words=768),
+    "qisumita_dataset": partial(get_qisumita_dataset, max_words=1024)
 }
 
 
