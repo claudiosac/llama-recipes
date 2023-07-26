@@ -76,5 +76,6 @@ class InstructionDataset(Dataset):
         return {
             "input_ids": example,
             "labels": labels,
-            "attention_mask":example_mask,
+            "attention_mask": example_mask,
+            "target": ann["output"]
         }
