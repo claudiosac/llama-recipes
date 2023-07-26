@@ -135,7 +135,6 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                     loss.backward()
                     if (step + 1) % gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
                         optimizer.step()
-                        lr_scheduler.step()
                         optimizer.zero_grad()
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
@@ -173,6 +172,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
         clear_gpu_cache()
             
+        # Update the learning rate as needed
+        lr_scheduler.step()
+          
         if train_config.run_validation:
             eval_ppl, eval_epoch_loss = evaluation(model, train_config, eval_dataloader, rank, tokenizer, epoch, wandb=wandb)
             if train_config.save_model and eval_epoch_loss < best_val_loss:
@@ -200,7 +202,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
             val_loss.append(best_val_loss)
             val_prep.append(eval_ppl)
         
+        
         print(f"Epoch {epoch+1}: train_perplexity={train_perplexity:.4f}, train_epoch_loss={train_epoch_loss:.4f}")
+        lr_scheduler.step()
 
     avg_train_prep = sum(train_prep)/len(train_prep)
     avg_train_loss = sum(train_loss)/len(train_loss)
@@ -239,7 +243,7 @@ def evaluation(model, train_config, eval_dataloader, local_rank, tokenizer, epoc
                 if train_config.enable_fsdp:
                     batch[key] = batch[key].to(local_rank)
                 else:
-                    batch[key] = batch[key].to('cuda')
+                    batch[key] = batch[key].to('cuda:0')
             # Ensure no gradients are computed for this scope to save memory
             with torch.no_grad():
                 # Forward pass and compute loss
