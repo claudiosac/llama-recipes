@@ -36,6 +36,8 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from policies import bfSixteen, fpSixteen,bfSixteen_mixed, get_llama_wrapper
 from copy import deepcopy
+from rouge_score import rouge_scorer, scoring
+from nltk.translate.bleu_score import sentence_bleu
 
 scaler = ShardedGradScaler()
 
@@ -43,13 +45,15 @@ scaler = ShardedGradScaler()
 def set_tokenizer_params(tokenizer: LlamaTokenizer):
     tokenizer.pad_token_id = 0
     tokenizer.padding_side = "left"
-    
+
+
 # Converting Bytes to Megabytes
 def byte2mb(x):
     return int(x / 2**20)
 
+
 def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_scheduler, gradient_accumulation_steps,
-          train_config, fsdp_config=None, local_rank=None, rank=None, wandb=None, resume_from=None):
+          train_config, fsdp_config=None, local_rank=None, rank=None, wandb=None, resume_from=None, inference_dataset=None):
     """
     Trains the model on the given dataloader
     
@@ -124,12 +128,16 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
-                            perplexity_value = total_loss.item() / (gradient_accumulation_steps * (step+1))
+                            perplexity_value = total_loss.item() / (step+1)
                             wandb.log({"train/step_loss": round(loss_value, 6),
                                        "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader)),
-                                       "train/lr": optimizer.param_groups[0].get('lr', 0),
-                                       "train/perplexity": math.exp(perplexity_value)})
+                                       "train/lr": lr_scheduler.get_last_lr()[0]})
+
+                        if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
+                                step == len(train_dataloader) - 1:
+                            inference(model, train_config, inference_dataset, tokenizer, wandb=wandb)
+                            model.train()
                 else:
                     # regular backpropagation when fp16 is not used
                     loss.backward()
@@ -139,12 +147,16 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
-                            perplexity_value = total_loss.item() / (gradient_accumulation_steps * (step + 1))
+                            perplexity_value = total_loss.item() / (step + 1)
                             wandb.log({"train/step_loss": round(loss_value, 6),
                                        "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader)),
-                                       "train/lr": lr_scheduler.get_lr(),
-                                       "train/perplexity": math.exp(perplexity_value)})
+                                       "train/lr": lr_scheduler.get_last_lr()[0]})
+
+                        if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
+                                step == len(train_dataloader) - 1:
+                            inference(model, train_config, inference_dataset, tokenizer, wandb=wandb)
+                            model.train()
 
                 if (step + 1) % (gradient_accumulation_steps * train_config.save_interval) == 0 or step == len(train_dataloader) - 1:
                     save_path = train_config.output_dir + "/checkpoint_" + str(epoch+1) + "." + str(step+1) + "." + str((step+1)+(epoch*len(train_dataloader)))
@@ -152,7 +164,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                     torch.save({'epoch': epoch+1, 'step': step+1, 'model_state_dict': model.state_dict()}, save_path + "/model.pkl")
                     torch.save({'epoch': epoch+1, 'step': step+1, 'optimizer_state_dict': optimizer.state_dict(),
-                                'loss': total_loss/(gradient_accumulation_steps * (step + 1)),
+                                'loss': total_loss/(step + 1),
                                 'scheduler': lr_scheduler.state_dict(), 'scaler': scaler.state_dict()},
                                save_path + "/checkpoint.pkl")
 
@@ -201,8 +213,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                 print(f"best eval loss on epoch {epoch} is {best_val_loss}")
             val_loss.append(best_val_loss)
             val_prep.append(eval_ppl)
-        
-        
+
         print(f"Epoch {epoch+1}: train_perplexity={train_perplexity:.4f}, train_epoch_loss={train_epoch_loss:.4f}")
         lr_scheduler.step()
 
@@ -276,6 +287,73 @@ def evaluation(model, train_config, eval_dataloader, local_rank, tokenizer, epoc
     # Print evaluation metrics
     print(f" {eval_ppl=} {eval_epoch_loss=}")
     return eval_ppl, eval_epoch_loss
+
+
+def inference(model, train_config, dataset, tokenizer, wandb=None):
+
+    model.eval()
+
+    test_preds_and_targets = list()
+    scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=False)
+    bleu_result = {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}
+    aggregator = scoring.BootstrapAggregator()
+
+    num_batches = int(len(dataset) / train_config.inference_batch_size)
+    for step in tqdm(range(0, num_batches), colour="red", desc="Inference"):
+        idx = step * train_config.inference_batch_size
+        [batch_inputs, batch_prompts, batch_targets] = dataset.get_batch(idx, batch_size=train_config.inference_batch_size)
+
+        batch = tokenizer(batch_prompts, return_tensors="pt")
+        batch = {k: v.to("cuda") for k, v in batch.items()}
+
+        outputs = None
+        with torch.no_grad():
+            outputs = model.generate(
+                **batch,
+                max_new_tokens=train_config.inference_max_new_tokens,
+                do_sample=train_config.inference_do_sample,
+                top_p=train_config.inference_top_p,
+                temperature=train_config.inference_temperature,
+                min_length=train_config.inference_min_length,
+                use_cache=train_config.inference_use_cache,
+                top_k=train_config.inference_top_k,
+                repetition_penalty=train_config.inference_repetition_penalty,
+                length_penalty=train_config.inference_length_penalty
+            )
+
+        batch_predictions = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        if len(batch_targets) != len(batch_predictions):
+            print("WARNING! Batch size different:", len(batch_targets), "!=", len(batch_predictions))
+            continue
+
+        for idx, target in enumerate(batch_targets):
+            inp = batch_inputs[idx]
+            pred = batch_predictions[idx].split("### Response:")[1].strip()
+            test_preds_and_targets.append((inp, target, pred))
+            score = scorer.score(target, pred)
+            aggregator.add_scores(score)
+            reference = [target.split(" ")]
+            candidate = pred.split(" ")
+            bleu_result["bleu1"] += sentence_bleu(reference, candidate, weights=(1, 0, 0, 0))
+            bleu_result["bleu2"] += sentence_bleu(reference, candidate, weights=(0.5, 0.5, 0, 0))
+            bleu_result["bleu3"] += sentence_bleu(reference, candidate, weights=(0.33, 0.33, 0.33, 0))
+            bleu_result["bleu4"] += sentence_bleu(reference, candidate, weights=(0.25, 0.25, 0.25, 0.25))
+
+    rouge_result = aggregator.aggregate()
+    for key in rouge_result:
+        rouge_result[key] = rouge_result[key].mid.fmeasure
+
+    for key in bleu_result.keys():
+        bleu_result[key] /= len(test_preds_and_targets)
+
+    if wandb is not None:
+        wandb.log({"inference/rouge1": rouge_result["rouge1"], "inference/rouge2": rouge_result["rouge2"],
+                   "inference/rougeL": rouge_result["rougeL"], "inference/rougeLsum": rouge_result["rougeLsum"],
+                   "inference/bleu1": bleu_result["bleu1"], "inference/bleu2": bleu_result["bleu2"],
+                   "inference/bleu3": bleu_result["bleu3"], "inference/bleu4": bleu_result["bleu4"]})
+
+    print("ROUGE:\n", rouge_result)
+    print("BLEU:\n", bleu_result)
 
 
 def freeze_transformer_layers(model, num_layer):

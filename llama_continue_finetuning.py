@@ -195,6 +195,13 @@ def main(**kwargs):
     if not train_config.enable_fsdp or rank == 0:
         print(f"--> Validation Set Length = {len(dataset_val)}")
 
+    inference_dataset = get_preprocessed_dataset(
+        tokenizer,
+        dataset_config,
+        split="inference",
+        max_size=train_config.inference_max_size
+    )
+
     train_sampler = None
     val_sampler = None
     if train_config.enable_fsdp:
@@ -289,7 +296,8 @@ def main(**kwargs):
             local_rank if train_config.enable_fsdp else None,
             rank if train_config.enable_fsdp else None,
             resume_from=(last_epoch, last_step, scaler_state),
-            wandb=wdb
+            wandb=wdb,
+            inference_dataset=inference_dataset
         )
         if not train_config.enable_fsdp or rank==0:
             [print(f'Key: {k}, Value: {v}') for k, v in results.items()]

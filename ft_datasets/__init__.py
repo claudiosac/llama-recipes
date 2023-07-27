@@ -6,3 +6,4 @@ from .alpaca_dataset import InstructionDataset as get_alpaca_dataset
 from .samsum_dataset import get_preprocessed_samsum as get_samsum_dataset
 from .qiansita_dataset import InstructionDataset as get_qiansita_dataset
 from .qisumita_dataset import InstructionDataset as get_qisumita_dataset
+from .qiinstructita_dataset import InstructionDataset as get_qiinstructita_dataset

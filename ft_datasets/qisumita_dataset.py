@@ -27,7 +27,7 @@ PROMPT_DICT = {
 
 
 class InstructionDataset(Dataset):
-    def __init__(self, dataset_config, tokenizer, partition="train", max_words=1024):
+    def __init__(self, dataset_config, tokenizer, partition="train", max_words=1024, max_size=-1):
         self.ann = json.load(open(dataset_config.data_path))
         if partition == "train":
             self.ann = self.ann["train"]
@@ -35,6 +35,9 @@ class InstructionDataset(Dataset):
             self.ann = self.ann["valid"]
         elif partition == "test":
             self.ann = self.ann["test"]
+
+        if 0 < max_size < len(self.ann):
+            self.ann = self.ann[0:max_size]
 
         self.max_words = max_words
         # tokenizer = Tokenizer(model_path=model_path + "./tokenizer.model")
@@ -76,6 +79,23 @@ class InstructionDataset(Dataset):
         return {
             "input_ids": example,
             "labels": labels,
-            "attention_mask": example_mask,
-            "target": ann["output"]
+            "attention_mask": example_mask
         }
+
+    def get_batch(self, idx, batch_size=1):
+        inputs, prompts, responses = list(), list(), list()
+        if idx >= len(self.ann):
+            return None
+        end = idx + batch_size if idx+batch_size <= len(self.ann) else len(self.ann)
+        slice = self.ann[idx:end]
+        for el in slice:
+            input = el["input"]
+            prompt, response = "", el["output"]
+            if el.get("input", "") == "":
+                prompt = PROMPT_DICT["prompt_no_input"].format_map(el)
+            else:
+                prompt = PROMPT_DICT["prompt_input"].format_map(el)
+            inputs.append(input)
+            prompts.append(prompt)
+            responses.append(response)
+        return [inputs, prompts, responses]

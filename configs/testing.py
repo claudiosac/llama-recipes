@@ -3,12 +3,11 @@ from typing import ClassVar
 
 @dataclass
 class test_config:
-    prompt_file: str = None
     model_name: str = "PATH/to/LLAMA/7B"
     dataset:str = "qiansita_dataset"
-    val_batch_size: int = 10
-    num_workers_dataloader:int = 4
-    peft_model: str = "PATH/to/PEFT/model"
+    test_batch_size: int = 1   # > 1 not working, needs padding for inputs with different size in batch
+    num_workers_dataloader: int = 4
+    peft_model: str = ""  #  --peft_model /mnt/data/training_results/llama2-7b-8bit-qiansita_base/checkpoint_2.40718
     quantization: bool = True
     summary_file: str = "PATH/to/summary/file"
     seed: int = 42  # seed value for reproducibility

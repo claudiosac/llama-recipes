@@ -149,6 +149,7 @@ def main(**kwargs):
         tokenizer,
         dataset_config,
         split="train",
+        max_size=train_config.train_max_size
     )
     
     if not train_config.enable_fsdp or rank == 0:
@@ -158,9 +159,18 @@ def main(**kwargs):
         tokenizer,
         dataset_config,
         split="test",
+        max_size=train_config.valid_max_size
     )
     if not train_config.enable_fsdp or rank == 0:
             print(f"--> Validation Set Length = {len(dataset_val)}")
+
+    inference_dataset = get_preprocessed_dataset(
+        tokenizer,
+        dataset_config,
+        split="inference",
+        max_size=train_config.inference_max_size
+    )
+    print(f"--> Inference Set Length = {len(inference_dataset)}")
 
     train_sampler = None
     val_sampler = None
@@ -217,9 +227,9 @@ def main(**kwargs):
         )
     scheduler = StepLR(optimizer, step_size=1, gamma=train_config.gamma)
 
-    wandb_project = "llama-2-7b-8bit-qiansita"
+    wandb_project = "llama-2-7b-8bit-qiinstructita"
     wandb_config = {"learning_rate": train_config.lr, "architecture": "LLAMA-2-7B-8bit",
-                    "dataset": "QIANSITA", "epochs": train_config.num_epochs}
+                    "dataset": "QIINSTRUCTITA", "epochs": train_config.num_epochs}
     wandb = {"id": None, "proj": wandb_project, "config": wandb_config}
 
     wdb.login()
@@ -242,7 +252,8 @@ def main(**kwargs):
             fsdp_config if train_config.enable_fsdp else None,
             local_rank if train_config.enable_fsdp else None,
             rank if train_config.enable_fsdp else None,
-            wandb=wdb
+            wandb=wdb,
+            inference_dataset=inference_dataset
         )
         if not train_config.enable_fsdp or rank==0:
             [print(f'Key: {k}, Value: {v}') for k, v in results.items()]

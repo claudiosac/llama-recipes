@@ -33,7 +33,9 @@ class qiansita_dataset:
     dataset: str = "qiansita_dataset"
     train_split: str = "train"
     test_split: str = "valid"
-    data_path: str = "/mnt/data/qi_datasets/qiansita_data.768.json"
+    inference_split: str = "test"
+    max_words: int = 768
+    data_path: str = "/mnt/data/qi_datasets/qiansita_data." + str(max_words) + ".json" if max_words > 0 else "/mnt/data/qi_datasets/qiansita_data.json"
 
 
 @dataclass
@@ -41,4 +43,16 @@ class qisumita_dataset:
     dataset: str = "qisumita_dataset"
     train_split: str = "train"
     test_split: str = "valid"
-    data_path: str = "/mnt/data/qi_datasets/qisumita_data.1024.json"
+    inference_split: str = "test"
+    max_words: int = 1024
+    data_path: str = "/mnt/data/qi_datasets/qisumita_data." + str(max_words) + ".json" if max_words > 0 else "/mnt/data/qi_datasets/qisumita_data.json"
+
+
+@dataclass
+class qiinstructita_dataset:
+    dataset: str = "qiinstructita_dataset"
+    train_split: str = "train"
+    test_split: str = "valid"
+    inference_split: str = "test"
+    max_words: int = 512
+    data_path: str = "/mnt/data/qi_datasets/qiinstructita_data." + str(max_words) + ".json" if max_words > 0 else "/mnt/data/qi_datasets/qiinstructita_data.json"

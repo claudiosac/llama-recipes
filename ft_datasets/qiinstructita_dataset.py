@@ -27,7 +27,7 @@ PROMPT_DICT = {
 
 
 class InstructionDataset(Dataset):
-    def __init__(self, dataset_config, tokenizer, partition="train", max_words=768, max_size=-1):
+    def __init__(self, dataset_config, tokenizer, partition="train", max_words=512, max_size=-1):
         self.ann = json.load(open(dataset_config.data_path))
         if partition == "train":
             self.ann = self.ann["train"]
@@ -89,7 +89,7 @@ class InstructionDataset(Dataset):
         end = idx + batch_size if idx+batch_size <= len(self.ann) else len(self.ann)
         slice = self.ann[idx:end]
         for el in slice:
-            input = el["instruction"].replace("Rispondi a questa domanda in italiano: ", "")
+            input = el["input"]
             prompt, response = "", el["output"]
             if el.get("input", "") == "":
                 prompt = PROMPT_DICT["prompt_no_input"].format_map(el)
