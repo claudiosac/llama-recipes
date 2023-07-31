@@ -131,8 +131,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                             perplexity_value = total_loss.item() / (step+1)
                             wandb.log({"train/step_loss": round(loss_value, 6),
                                        "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
-                                       "train/step": (step+1)+(epoch*len(train_dataloader)),
-                                       "train/lr": lr_scheduler.get_last_lr()[0]})
+                                       "train/step": (step+1)+(epoch*len(train_dataloader))})
 
                         if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
                                 step == len(train_dataloader) - 1:
@@ -150,8 +149,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                             perplexity_value = total_loss.item() / (step + 1)
                             wandb.log({"train/step_loss": round(loss_value, 6),
                                        "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
-                                       "train/step": (step+1)+(epoch*len(train_dataloader)),
-                                       "train/lr": lr_scheduler.get_last_lr()[0]})
+                                       "train/step": (step+1)+(epoch*len(train_dataloader))})
 
                         if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
                                 step == len(train_dataloader) - 1:
