@@ -51,7 +51,7 @@ def main(**kwargs):
 
     model.eval()
 
-    xlsx_sheet1, xlsx_sheet2 = {"metric": list(), "value": list()}, {"input": list(), "target": list(), "prediction": list()}
+    xlsx_sheet1, xlsx_sheet2 = {"metric": list(), "value": list()}, {"instruction": list(), "input": list(), "target": list(), "prediction": list()}
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=False)
     bleu_result = {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}
     aggregator = scoring.BootstrapAggregator()
@@ -59,7 +59,7 @@ def main(**kwargs):
     num_batches = int(len(dataset_test) / test_config.test_batch_size)
     for step in tqdm(range(0, num_batches), colour="red", desc="Test-set"):
         idx = step * test_config.test_batch_size
-        [batch_inputs, batch_prompts, batch_targets] = dataset_test.get_batch(idx, batch_size=test_config.test_batch_size)
+        [batch_inputs, batch_prompts, batch_targets, batch_instructions] = dataset_test.get_batch(idx, batch_size=test_config.test_batch_size)
 
         batch = tokenizer(batch_prompts, return_tensors="pt")
         batch = {k: v.to("cuda") for k, v in batch.items()}
@@ -86,7 +86,9 @@ def main(**kwargs):
 
         for idx, target in enumerate(batch_targets):
             inp = batch_inputs[idx]
+            ins = batch_instructions[idx]
             pred = batch_predictions[idx].split("### Response:")[1].strip()
+            xlsx_sheet2["instruction"].append(ins)
             xlsx_sheet2["input"].append(inp)
             xlsx_sheet2["target"].append(target)
             xlsx_sheet2["prediction"].append(pred)
