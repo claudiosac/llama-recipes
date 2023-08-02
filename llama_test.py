@@ -19,6 +19,7 @@ from utils.dataset_utils import get_preprocessed_dataset
 from utils.config_utils import update_config, generate_dataset_config
 from rouge_score import rouge_scorer, scoring
 from nltk.translate.bleu_score import sentence_bleu
+import pandas as pd
 
 
 def main(**kwargs):
@@ -50,7 +51,7 @@ def main(**kwargs):
 
     model.eval()
 
-    test_preds_and_targets = list()
+    xlsx_sheet1, xlsx_sheet2 = {"metric": list(), "value": list()}, {"input": list(), "target": list(), "prediction": list()}
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=False)
     bleu_result = {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}
     aggregator = scoring.BootstrapAggregator()
@@ -86,7 +87,9 @@ def main(**kwargs):
         for idx, target in enumerate(batch_targets):
             inp = batch_inputs[idx]
             pred = batch_predictions[idx].split("### Response:")[1].strip()
-            test_preds_and_targets.append((inp, target, pred))
+            xlsx_sheet2["input"].append(inp)
+            xlsx_sheet2["target"].append(target)
+            xlsx_sheet2["prediction"].append(pred)
             score = scorer.score(target, pred)
             aggregator.add_scores(score)
             reference = [target.split(" ")]
@@ -102,21 +105,19 @@ def main(**kwargs):
     rouge_result = aggregator.aggregate()
     for key in rouge_result:
         rouge_result[key] = rouge_result[key].mid.fmeasure
+        xlsx_sheet1["metric"].append(key)
+        xlsx_sheet1["value"].append(rouge_result[key])
 
     for key in bleu_result.keys():
-        bleu_result[key] /= len(test_preds_and_targets)
+        bleu_result[key] /= len(xlsx_sheet2)
+        xlsx_sheet1["metric"].append(key)
+        xlsx_sheet1["value"].append(bleu_result[key])
 
-    print("ROUGE:\n", rouge_result)
-    print("BLEU:\n", bleu_result)
-
-    with open(test_config.summary_file, "w", encoding="utf-8") as f:
-        f.write("ROUGE\tBLEU\t-\n")
-        f.write(str(rouge_result) + "\t" + str(bleu_result) + "\n")
-        f.write("----\t-----\n")
-        f.write("----\t-----\n")
-        f.write("INPUT\tTARGET\tPREDICTION\n")
-        for inp, target, pred in test_preds_and_targets:
-            f.write(inp + "\t" + target.replace("\n","\\n") + "\t" + pred.replace("\n","\\n") + "\n")
+    df1 = pd.DataFrame(xlsx_sheet1)
+    df2 = pd.DataFrame(xlsx_sheet2)
+    with pd.ExcelWriter(test_config.summary_file) as writer:
+        df1.to_excel(writer, sheet_name="metrics", index=False)
+        df2.to_excel(writer, sheet_name="text", index=False)
 
 
 if __name__ == "__main__":

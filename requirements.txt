@@ -15,4 +15,5 @@ py7zr
 scipy
 rouge-score
 nltk
-
+wandb
+openpyxl

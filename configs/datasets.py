@@ -54,5 +54,5 @@ class qiinstructita_dataset:
     train_split: str = "train"
     test_split: str = "valid"
     inference_split: str = "test"
-    max_words: int = 512
+    max_words: int = 2048
     data_path: str = "/mnt/data/qi_datasets/qiinstructita_data." + str(max_words) + ".json" if max_words > 0 else "/mnt/data/qi_datasets/qiinstructita_data.json"
