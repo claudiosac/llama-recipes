@@ -28,6 +28,7 @@ PROMPT_DICT = {
 
 class InstructionDataset(Dataset):
     def __init__(self, dataset_config, tokenizer, partition="train", max_words=512, max_size=-1):
+        print("Loading dataset: " + dataset_config.data_path + " (max_words=" + str(max_words) + ", split=" + partition + ")")
         self.ann = json.load(open(dataset_config.data_path))
         if partition == "train":
             self.ann = self.ann["train"]
@@ -83,19 +84,39 @@ class InstructionDataset(Dataset):
         }
 
     def get_batch(self, idx, batch_size=1):
-        inputs, prompts, responses = list(), list(), list()
+        instructions, inputs, prompts, responses = list(), list(), list(), list()
         if idx >= len(self.ann):
             return None
         end = idx + batch_size if idx+batch_size <= len(self.ann) else len(self.ann)
         slice = self.ann[idx:end]
         for el in slice:
             input = el["input"]
+            instruction = el["instruction"]
             prompt, response = "", el["output"]
             if el.get("input", "") == "":
                 prompt = PROMPT_DICT["prompt_no_input"].format_map(el)
             else:
                 prompt = PROMPT_DICT["prompt_input"].format_map(el)
-            inputs.append(input)
+
+            if instruction == "Genera un breve riassunto in italiano.":
+                instructions.append("SUM")
+                inputs.append(input)
+            elif instruction == "Riformula in italiano con tono neutro.":
+                instructions.append("RPH")
+                inputs.append(input)
+            elif instruction == "Genera un titolo in italiano.":
+                instructions.append("TTL")
+                inputs.append(input)
+            elif "Rispondi a questa domanda in italiano:" in instruction:
+                instructions.append("ANS")
+                inputs.append(instruction.replace("Rispondi a questa domanda in italiano:", "").strip())
+            elif "domanda e risposta in italiano" in instruction:
+                instructions.append("QA")
+                inputs.append(input)
+            else:
+                instructions.append(instruction)
+                inputs.append(input)
+
             prompts.append(prompt)
             responses.append(response)
-        return [inputs, prompts, responses]
+        return [inputs, prompts, responses, instructions]

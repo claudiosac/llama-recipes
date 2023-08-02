@@ -6,11 +6,11 @@ from typing import ClassVar
 
 @dataclass
 class train_config:
-    model_name: str="PATH/to/LLAMA/7B"
+    model_name: str="/mnt/data/models/LLaMA2/7B_hf"
     enable_fsdp: bool= False 
     run_validation: bool=True
     batch_size_training: int=16
-    num_epochs: int=1
+    num_epochs: int=3
     num_workers_dataloader: int=4
     lr: float=1e-4
     weight_decay: float=0.0
@@ -18,12 +18,12 @@ class train_config:
     seed: int=42
     use_fp16: bool=True
     mixed_precision: bool=True
-    val_batch_size: int=2
-    dataset = "qiinstructita_dataset"
+    val_batch_size: int=3
+    dataset = "qirphita_dataset"
     micro_batch_size: int=2
     peft_method: str = "lora" # None , llama_adapter, prefix
     use_peft: bool=True
-    output_dir: str = "PATH/to/save/PEFT/model"
+    output_dir: str = "/mnt/data/training_results/llama2-7b-8bit-qirphita"
     freeze_layers: bool = False
     num_freeze_layers: int = 1
     quantization: bool = True
@@ -40,7 +40,7 @@ class train_config:
     train_max_size: int = -1  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
     valid_max_size: int = -1  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
     #
-    inference_interval: int = 500  # numero effetivo di steps di intervallo ->  (batch_size/micro_batch_size) * inference_interval (meglio che sia un multiplo di save_interval)
+    inference_interval: int = 300  # numero effetivo di steps di intervallo ->  (batch_size/micro_batch_size) * inference_interval (meglio che sia un multiplo di save_interval)
     inference_batch_size: int = 1  # > 1 not working, needs padding for inputs with different size in batch
     inference_max_size: int = 200  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
     inference_max_new_tokens: int = 256  # The maximum numbers of tokens to generate

@@ -97,7 +97,7 @@ class InstructionDataset(Dataset):
                 prompt = PROMPT_DICT["prompt_no_input"].format_map(el)
             else:
                 prompt = PROMPT_DICT["prompt_input"].format_map(el)
-            instructions.append("SUM")
+            instructions.append("TTL")
             inputs.append(input)
             prompts.append(prompt)
             responses.append(response)

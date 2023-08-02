@@ -1,13 +1,14 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
+
 @dataclass
 class test_config:
     model_name: str = "/mnt/data/models/LLaMA2/7B_hf"
-    dataset:str = "qiinstructita_dataset"
+    dataset: str = "qiinstructita_dataset"
     test_batch_size: int = 1   # > 1 not working, needs padding for inputs with different size in batch
     num_workers_dataloader: int = 4
-    peft_model: str = "/mnt/data/training_results/llama2-7b-8bit-qiinstructita/checkpoint_1.3840.3840"
+    peft_model: str = "/mnt/data/training_results/llama2-7b-8bit-qiinstructita/checkpoint_1.8400.8400"
     quantization: bool = True
     summary_file: str = peft_model + "/summary.xlsx"
     seed: int = 42  # seed value for reproducibility

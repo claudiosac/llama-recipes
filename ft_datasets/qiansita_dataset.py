@@ -83,19 +83,21 @@ class InstructionDataset(Dataset):
         }
 
     def get_batch(self, idx, batch_size=1):
-        inputs, prompts, responses = list(), list(), list()
+        instructions, inputs, prompts, responses = list(), list(), list(), list()
         if idx >= len(self.ann):
             return None
         end = idx + batch_size if idx+batch_size <= len(self.ann) else len(self.ann)
         slice = self.ann[idx:end]
         for el in slice:
-            input = el["instruction"].replace("Rispondi a questa domanda in italiano: ", "")
+            input = el["input"]
+            instruction = el["instruction"]
             prompt, response = "", el["output"]
             if el.get("input", "") == "":
                 prompt = PROMPT_DICT["prompt_no_input"].format_map(el)
             else:
                 prompt = PROMPT_DICT["prompt_input"].format_map(el)
-            inputs.append(input)
+            instructions.append("ANS")
+            inputs.append(instruction.replace("Rispondi a questa domanda in italiano:", "").strip())
             prompts.append(prompt)
             responses.append(response)
-        return [inputs, prompts, responses]
+        return [inputs, prompts, responses, instructions]

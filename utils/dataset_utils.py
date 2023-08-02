@@ -12,6 +12,8 @@ from ft_datasets import (
     get_qiansita_dataset,
     get_qisumita_dataset,
     get_qiinstructita_dataset,
+    get_qirphita_dataset,
+    get_qittlita_dataset
 )
 from typing import Optional
 
@@ -22,7 +24,9 @@ DATASET_PREPROC = {
     "samsum_dataset": get_samsum_dataset,
     "qiansita_dataset": partial(get_qiansita_dataset),
     "qisumita_dataset": partial(get_qisumita_dataset),
-    "qiinstructita_dataset": partial(get_qiinstructita_dataset)
+    "qiinstructita_dataset": partial(get_qiinstructita_dataset),
+    "qirphita_dataset": partial(get_qirphita_dataset),
+    "qittlita_dataset": partial(get_qittlita_dataset)
 }
 
 
