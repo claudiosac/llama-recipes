@@ -116,7 +116,7 @@ def main(**kwargs):
         f.write("----\t-----\n")
         f.write("INPUT\tTARGET\tPREDICTION\n")
         for inp, target, pred in test_preds_and_targets:
-            f.write(inp + "\t" + target + "\t" + pred.replace("\n","") + "\n")
+            f.write(inp + "\t" + target.replace("\n","\\n") + "\t" + pred.replace("\n","\\n") + "\n")
 
 
 if __name__ == "__main__":

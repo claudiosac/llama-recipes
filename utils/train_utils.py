@@ -79,7 +79,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
     last_epoch, last_step = 0, 0
     if resume_from is not None and len(resume_from) == 3:
-        last_epoch, last_step, scaler_state = resume_from
+        last_epoch, last_step, last_loss, scaler_state = resume_from
         if scaler_state is not None:
             scaler.load_state_dict(scaler_state)
             print("Scaler loaded from checkpoint : " + train_config.checkpoint)
@@ -98,7 +98,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
         with MemoryTrace() as memtrace:  # track the memory usage
             model.train()
-            total_loss = 0.0
+            total_loss = last_loss
             data_set_len = 0
 
             for step, batch in enumerate(tqdm(train_dataloader,colour="blue", desc=f"Training Epoch {epoch}")):
@@ -131,12 +131,12 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                             perplexity_value = total_loss.item() / (step+1)
                             wandb.log({"train/step_loss": round(loss_value, 6),
                                        "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
-                                       "train/step": (step+1)+(epoch*len(train_dataloader)),
-                                       "train/lr": lr_scheduler.get_last_lr()[0]})
+                                       "train/step": (step+1)+(epoch*len(train_dataloader))})
 
                         if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
                                 step == len(train_dataloader) - 1:
-                            inference(model, train_config, inference_dataset, tokenizer, wandb=wandb)
+                            global_step = (step+1)+(epoch*len(train_dataloader))
+                            inference(model, train_config, inference_dataset, tokenizer, global_step, wandb=wandb)
                             model.train()
                 else:
                     # regular backpropagation when fp16 is not used
@@ -150,12 +150,12 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                             perplexity_value = total_loss.item() / (step + 1)
                             wandb.log({"train/step_loss": round(loss_value, 6),
                                        "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
-                                       "train/step": (step+1)+(epoch*len(train_dataloader)),
-                                       "train/lr": lr_scheduler.get_last_lr()[0]})
+                                       "train/step": (step+1)+(epoch*len(train_dataloader))})
 
                         if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
                                 step == len(train_dataloader) - 1:
-                            inference(model, train_config, inference_dataset, tokenizer, wandb=wandb)
+                            global_step = (step+1)+(epoch*len(train_dataloader))
+                            inference(model, train_config, inference_dataset, tokenizer, global_step, wandb=wandb)
                             model.train()
 
                 if (step + 1) % (gradient_accumulation_steps * train_config.save_interval) == 0 or step == len(train_dataloader) - 1:
@@ -289,7 +289,7 @@ def evaluation(model, train_config, eval_dataloader, local_rank, tokenizer, epoc
     return eval_ppl, eval_epoch_loss
 
 
-def inference(model, train_config, dataset, tokenizer, wandb=None):
+def inference(model, train_config, dataset, tokenizer, global_step, wandb=None):
 
     model.eval()
 
@@ -350,7 +350,7 @@ def inference(model, train_config, dataset, tokenizer, wandb=None):
         wandb.log({"inference/rouge1": rouge_result["rouge1"], "inference/rouge2": rouge_result["rouge2"],
                    "inference/rougeL": rouge_result["rougeL"], "inference/rougeLsum": rouge_result["rougeLsum"],
                    "inference/bleu1": bleu_result["bleu1"], "inference/bleu2": bleu_result["bleu2"],
-                   "inference/bleu3": bleu_result["bleu3"], "inference/bleu4": bleu_result["bleu4"]})
+                   "inference/bleu3": bleu_result["bleu3"], "inference/bleu4": bleu_result["bleu4"], "inference/step": global_step})
 
     print("ROUGE:\n", rouge_result)
     print("BLEU:\n", bleu_result)
