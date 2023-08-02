@@ -90,7 +90,7 @@ def main(**kwargs):
     # Calculate gradient accumulation steps
     gradient_accumulation_steps = train_config.batch_size_training // train_config.micro_batch_size
 
-    last_epoch, last_step, optimizer_state, scheduler_state, scaler_state = 0, 0, None, None, None
+    last_epoch, last_step, last_loss, optimizer_state, scheduler_state, scaler_state = 0, 0, 0, None, None, None
     if train_config.checkpoint is not None and os.path.exists(train_config.checkpoint + "/checkpoint.pkl"):
 
         # No! perchè, usando peft, carica l'adapter aggiornato al checkpoint

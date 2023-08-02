@@ -42,7 +42,7 @@ def main(**kwargs):
     dataset_test = get_preprocessed_dataset(
         tokenizer,
         dataset_config,
-        split="val",
+        split="test",
         max_size=200,
     )
     print(f"--> Test Set Length = {len(dataset_test)}")

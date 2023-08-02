@@ -77,8 +77,8 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
     # Create a gradient scaler for fp16
     scaler = torch.cuda.amp.GradScaler() if train_config.use_fp16 else None
 
-    last_epoch, last_step = 0, 0
-    if resume_from is not None and len(resume_from) == 3:
+    last_epoch, last_step, last_loss = 0, 0, 0
+    if resume_from is not None and len(resume_from) == 4:
         last_epoch, last_step, last_loss, scaler_state = resume_from
         if scaler_state is not None:
             scaler.load_state_dict(scaler_state)
@@ -128,7 +128,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
-                            perplexity_value = total_loss.item() / (step+1)
+                            perplexity_value = total_loss.item() / ((step+1)-(last_step-1))
                             wandb.log({"train/step_loss": round(loss_value, 6),
                                        "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader))})
@@ -147,7 +147,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
-                            perplexity_value = total_loss.item() / (step + 1)
+                            perplexity_value = total_loss.item() / ((step+1)-(last_step-1))
                             wandb.log({"train/step_loss": round(loss_value, 6),
                                        "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader))})
