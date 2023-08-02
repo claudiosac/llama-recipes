@@ -113,6 +113,9 @@ def main(**kwargs):
         xlsx_sheet1["metric"].append(key)
         xlsx_sheet1["value"].append(bleu_result[key])
 
+    print(rouge_result)
+    print(bleu_result)
+
     df1 = pd.DataFrame(xlsx_sheet1)
     df2 = pd.DataFrame(xlsx_sheet2)
     with pd.ExcelWriter(test_config.summary_file) as writer:
