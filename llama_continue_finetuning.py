@@ -91,7 +91,7 @@ def main(**kwargs):
     gradient_accumulation_steps = train_config.batch_size_training // train_config.micro_batch_size
 
     last_epoch, last_step, optimizer_state, scheduler_state, scaler_state = 0, 0, None, None, None
-    if train_config.checkpoint is not None and os.path.exists(train_config.checkpoint + "/model.pkl"):
+    if train_config.checkpoint is not None and os.path.exists(train_config.checkpoint + "/checkpoint.pkl"):
 
         # No! perchè, usando peft, carica l'adapter aggiornato al checkpoint
         # model_checkpoint = torch.load(train_config.checkpoint + "/model.pkl")
@@ -113,6 +113,7 @@ def main(**kwargs):
 
         last_epoch = checkpoint.get('epoch', 0)
         last_step = checkpoint.get('step', 0)
+        last_loss = checkpoint.get('loss',0)
 
         '''torch.save({'epoch': 1, 'step': 40718, 'optimizer_state_dict': optimizer_state,
                     'loss': 0.6, 'scheduler': None, 'scaler': None}, train_config.output_dir + "/checkpoint.pkl")'''
@@ -270,9 +271,9 @@ def main(**kwargs):
         scheduler.load_state_dict(scheduler_state)
         print("Scheduler loaded from checkpoint : " + train_config.checkpoint)
 
-    wandb_project = "llama-2-7b-8bit-qiansita"
+    wandb_project = "llama-2-7b-8bit-qiinstructita"
     wandb_config = {"learning_rate": train_config.lr, "architecture": "LLAMA-2-7B-8bit",
-                    "dataset": "QIANSITA", "epochs": train_config.num_epochs}
+                    "dataset": "QIINSTRUCTITA", "epochs": train_config.num_epochs}
     wandb = {"id": None, "proj": wandb_project, "config": wandb_config}
 
     wdb.login()
@@ -295,7 +296,7 @@ def main(**kwargs):
             fsdp_config if train_config.enable_fsdp else None,
             local_rank if train_config.enable_fsdp else None,
             rank if train_config.enable_fsdp else None,
-            resume_from=(last_epoch, last_step, scaler_state),
+            resume_from=(last_epoch, last_step, last_loss, scaler_state),
             wandb=wdb,
             inference_dataset=inference_dataset
         )
