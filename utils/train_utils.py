@@ -301,7 +301,7 @@ def inference(model, train_config, dataset, tokenizer, global_step, wandb=None):
     num_batches = int(len(dataset) / train_config.inference_batch_size)
     for step in tqdm(range(0, num_batches), colour="red", desc="Inference"):
         idx = step * train_config.inference_batch_size
-        [batch_inputs, batch_prompts, batch_targets] = dataset.get_batch(idx, batch_size=train_config.inference_batch_size)
+        [batch_inputs, batch_prompts, batch_targets, batch_instructions] = dataset.get_batch(idx, batch_size=train_config.inference_batch_size)
 
         batch = tokenizer(batch_prompts, return_tensors="pt")
         batch = {k: v.to("cuda") for k, v in batch.items()}
