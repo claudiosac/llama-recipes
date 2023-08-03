@@ -92,13 +92,21 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
     best_val_loss = float("inf")
     for epoch in range(0, train_config.num_epochs):
 
-        if epoch < (last_epoch - 1) or (epoch == (last_epoch - 1) and last_step == len(train_dataloader)):
+        is_epoch_finished = True if (epoch == (last_epoch - 1) and last_step == len(train_dataloader)) else False
+        continue_epoch = True if (epoch == (last_epoch - 1) and last_step < len(train_dataloader)) else False
+
+        if epoch < (last_epoch - 1) or is_epoch_finished:
             print("Training Epoch " + str(epoch) + " SKIPPED!!")
             continue
+        else:
+            if continue_epoch:
+                print("Continue Epoch " + str(epoch) + " from step " + str(last_step))
+            else:
+                print("Starting new epoch from 0")
 
         with MemoryTrace() as memtrace:  # track the memory usage
             model.train()
-            total_loss = last_loss
+            total_loss = last_loss if continue_epoch else 0
             data_set_len = 0
 
             for step, batch in enumerate(tqdm(train_dataloader,colour="blue", desc=f"Training Epoch {epoch}")):
@@ -128,9 +136,10 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
-                            perplexity_value = total_loss.item() / ((step+1)-(last_step-1))
+                            num_step_for_current_epoch = ((step+1)-(last_step-1)) if continue_epoch else (step+1)
+                            epochloss = total_loss.item() / num_step_for_current_epoch
                             wandb.log({"train/step_loss": round(loss_value, 6),
-                                       "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
+                                       "train/loss": round(epochloss, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader))})
 
                         if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
@@ -147,9 +156,10 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
-                            perplexity_value = total_loss.item() / ((step+1)-(last_step-1))
+                            num_step_for_current_epoch = ((step + 1) - (last_step - 1)) if continue_epoch else (step + 1)
+                            epochloss = total_loss.item() / num_step_for_current_epoch
                             wandb.log({"train/step_loss": round(loss_value, 6),
-                                       "train/loss": round(perplexity_value, 6), "train/epoch": epoch+1,
+                                       "train/loss": round(epochloss, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader))})
 
                         if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
