@@ -21,7 +21,7 @@ PROMPT_DICT = {
     "prompt_no_input": (
         "Di seguito è riportata un'istruzione che descrive un compito da eseguire. "
         "Scrivi una risposta che completa in modo appropriato la richiesta.\n\n"
-        "### Instruction:\n{instruction}\n\n### Response:"
+        "### Istruzione:\n{instruction}\n\n### Response:"
     ),
 }
 
