@@ -49,5 +49,6 @@ def get_preprocessed_dataset(
         dataset_config,
         tokenizer,
         get_split(),
+        max_words=dataset_config.max_words,
         max_size=max_size,
     )

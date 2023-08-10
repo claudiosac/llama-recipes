@@ -142,8 +142,8 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                                        "train/loss": round(epochloss, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader))})
 
-                        if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
-                                step == len(train_dataloader) - 1:
+                        if train_config.inference_interval > 0 and ((step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
+                                step == len(train_dataloader) - 1):
                             global_step = (step+1)+(epoch*len(train_dataloader))
                             inference(model, train_config, inference_dataset, tokenizer, global_step, wandb=wandb)
                             model.train()
@@ -162,8 +162,8 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                                        "train/loss": round(epochloss, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader))})
 
-                        if train_config.inference_interval > 0 and (step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
-                                step == len(train_dataloader) - 1:
+                        if train_config.inference_interval > 0 and ((step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
+                                step == len(train_dataloader) - 1):
                             global_step = (step+1)+(epoch*len(train_dataloader))
                             inference(model, train_config, inference_dataset, tokenizer, global_step, wandb=wandb)
                             model.train()
