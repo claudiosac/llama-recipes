@@ -6,6 +6,8 @@
 import copy
 import json
 import os
+import random
+
 import torch
 
 from sentencepiece import SentencePieceProcessor
@@ -27,8 +29,8 @@ PROMPT_DICT = {
 
 
 class InstructionDataset(Dataset):
-    def __init__(self, dataset_config, tokenizer, partition="train", max_words=512, max_size=-1):
-        print("Loading dataset: " + dataset_config.data_path + " (max_words=" + str(max_words) + ", split=" + partition + ")")
+    def __init__(self, dataset_config, tokenizer, partition="train", max_words=512, max_size=-1, by_type=False, shuffle=False):
+        print("Loading dataset: " + dataset_config.data_path + " (max_words=" + str(max_words) + ", split=" + partition + ", by_type=" + str(by_type) + ")")
         self.ann = json.load(open(dataset_config.data_path))
         if partition == "train":
             self.ann = self.ann["train"]
@@ -37,8 +39,36 @@ class InstructionDataset(Dataset):
         elif partition == "test":
             self.ann = self.ann["test"]
 
-        if 0 < max_size < len(self.ann):
-            self.ann = self.ann[0:max_size]
+        types = ["ans", "qa", "sum", "ttl", "rph"]
+
+        if by_type:
+            data_by_type = {el: list for el in types}
+            for el in self.ann:
+                eltype = self.get_type(el)
+                if eltype in types:
+                    if len(data_by_type[eltype]) < max_size:
+                        data_by_type[eltype].append(el)
+
+                    stop = True
+                    for t in data_by_type.keys():
+                        if len(data_by_type[t]) < max_size:
+                            stop = False
+                            break
+
+                    if stop:
+                        break
+
+            self.ann = list()
+            for t in data_by_type.keys():
+                for el in data_by_type[t]:
+                    self.ann.append(el)
+
+        else:
+            if 0 < max_size < len(self.ann):
+                self.ann = self.ann[0:max_size]
+
+        if shuffle:
+            random.shuffle(self.ann)
 
         self.max_words = max_words
         # tokenizer = Tokenizer(model_path=model_path + "./tokenizer.model")
@@ -83,6 +113,24 @@ class InstructionDataset(Dataset):
             "attention_mask": example_mask
         }
 
+    def get_type(self, element):
+        if "type" in element:
+            return element["type"]
+        else:
+            instruction = element["instruction"]
+            if instruction == "Genera un breve riassunto in italiano.":
+                return "sum"
+            elif instruction == "Riformula in italiano con tono neutro.":
+                return "rph"
+            elif instruction == "Genera un titolo in italiano.":
+                return "ttl"
+            elif "Rispondi a questa domanda in italiano:" in instruction:
+                return "ans"
+            elif "domanda e risposta in italiano" in instruction:
+                return "qa"
+            else:
+                return instruction
+
     def get_batch(self, idx, batch_size=1):
         instructions, inputs, prompts, responses = list(), list(), list(), list()
         if idx >= len(self.ann):
@@ -98,23 +146,12 @@ class InstructionDataset(Dataset):
             else:
                 prompt = PROMPT_DICT["prompt_input"].format_map(el)
 
-            if instruction == "Genera un breve riassunto in italiano.":
-                instructions.append("SUM")
-                inputs.append(input)
-            elif instruction == "Riformula in italiano con tono neutro.":
-                instructions.append("RPH")
-                inputs.append(input)
-            elif instruction == "Genera un titolo in italiano.":
-                instructions.append("TTL")
-                inputs.append(input)
-            elif "Rispondi a questa domanda in italiano:" in instruction:
-                instructions.append("ANS")
+            eltype = self.get_type(el)
+            instructions.append(eltype)
+
+            if eltype == "ans":
                 inputs.append(instruction.replace("Rispondi a questa domanda in italiano:", "").strip())
-            elif "domanda e risposta in italiano" in instruction:
-                instructions.append("QA")
-                inputs.append(input)
             else:
-                instructions.append(instruction)
                 inputs.append(input)
 
             prompts.append(prompt)

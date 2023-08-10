@@ -168,7 +168,8 @@ def main(**kwargs):
         tokenizer,
         dataset_config,
         split="inference",
-        max_size=train_config.inference_max_size
+        max_size=train_config.inference_max_size,
+        by_type=train_config.inference_by_type
     )
     print(f"--> Inference Set Length = {len(inference_dataset)}")
 

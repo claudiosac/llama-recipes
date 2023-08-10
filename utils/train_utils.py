@@ -134,6 +134,14 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         scaler.update()
                         optimizer.zero_grad()
 
+                        path_to_save = train_config.output_dir + "/last_checkpoint"
+                        if os.path.exists(path_to_save):
+                            os.remove(path_to_save)
+                        model.save_pretrained(save_path)
+                        torch.save({'epoch': epoch + 1, 'step': step + 1, 'optimizer_state_dict': optimizer.state_dict(),
+                                    'loss': total_loss / (step + 1), 'scheduler': lr_scheduler.state_dict(), 'scaler': scaler.state_dict()},
+                                   save_path + "/checkpoint.pkl")
+
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
                             num_step_for_current_epoch = ((step+1)-(last_step-1)) if continue_epoch else (step+1)
@@ -142,10 +150,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                                        "train/loss": round(epochloss, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader))})
 
-                        if train_config.inference_interval > 0 and ((step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
-                                step == len(train_dataloader) - 1):
+                        if train_config.inference_interval > 0 and ((step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or step == (len(train_dataloader) - 1)):
                             global_step = (step+1)+(epoch*len(train_dataloader))
-                            inference(model, train_config, inference_dataset, tokenizer, global_step, wandb=wandb)
+                            inference(model, train_config, inference_dataset, tokenizer, global_step, wandb=wandb, by_type=train_config.inference_by_type)
                             model.train()
                 else:
                     # regular backpropagation when fp16 is not used
@@ -153,6 +160,14 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                     if (step + 1) % gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
                         optimizer.step()
                         optimizer.zero_grad()
+
+                        path_to_save = train_config.output_dir + "/last_checkpoint"
+                        if os.path.exists(path_to_save):
+                            os.remove(path_to_save)
+                        model.save_pretrained(save_path)
+                        torch.save({'epoch': epoch + 1, 'step': step + 1, 'optimizer_state_dict': optimizer.state_dict(),
+                                    'loss': total_loss / (step + 1), 'scheduler': lr_scheduler.state_dict(), 'scaler': scaler.state_dict()},
+                                   save_path + "/checkpoint.pkl")
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
@@ -162,10 +177,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                                        "train/loss": round(epochloss, 6), "train/epoch": epoch+1,
                                        "train/step": (step+1)+(epoch*len(train_dataloader))})
 
-                        if train_config.inference_interval > 0 and ((step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or \
-                                step == len(train_dataloader) - 1):
+                        if train_config.inference_interval > 0 and ((step + 1) % (gradient_accumulation_steps * train_config.inference_interval) == 0 or  step == (len(train_dataloader) - 1)):
                             global_step = (step+1)+(epoch*len(train_dataloader))
-                            inference(model, train_config, inference_dataset, tokenizer, global_step, wandb=wandb)
+                            inference(model, train_config, inference_dataset, tokenizer, global_step, wandb=wandb, by_type=train_config.inference_by_type)
                             model.train()
 
                 if (step + 1) % (gradient_accumulation_steps * train_config.save_interval) == 0 or step == len(train_dataloader) - 1:
@@ -299,7 +313,30 @@ def evaluation(model, train_config, eval_dataloader, local_rank, tokenizer, epoc
     return eval_ppl, eval_epoch_loss
 
 
-def inference(model, train_config, dataset, tokenizer, global_step, wandb=None):
+def predict(model, tokenizer, batch_prompts, train_config):
+    batch = tokenizer(batch_prompts, return_tensors="pt")
+    batch = {k: v.to("cuda") for k, v in batch.items()}
+
+    outputs = None
+    with torch.no_grad():
+        outputs = model.generate(
+            **batch,
+            max_new_tokens=train_config.inference_max_new_tokens,
+            do_sample=train_config.inference_do_sample,
+            top_p=train_config.inference_top_p,
+            temperature=train_config.inference_temperature,
+            min_length=train_config.inference_min_length,
+            use_cache=train_config.inference_use_cache,
+            top_k=train_config.inference_top_k,
+            repetition_penalty=train_config.inference_repetition_penalty,
+            length_penalty=train_config.inference_length_penalty
+        )
+
+    batch_predictions = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+    return batch_predictions
+
+
+def inference(model, train_config, dataset, tokenizer, global_step, wandb=None, by_type=False):
 
     model.eval()
 
@@ -307,36 +344,34 @@ def inference(model, train_config, dataset, tokenizer, global_step, wandb=None):
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=False)
     bleu_result = {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}
     aggregator = scoring.BootstrapAggregator()
-
     num_batches = int(len(dataset) / train_config.inference_batch_size)
+
+    stats_by_type = {
+        "ans": {"rouge": scoring.BootstrapAggregator(),
+                "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "size": 0},
+        "sum": {"rouge": scoring.BootstrapAggregator(),
+                "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "size": 0},
+        "qa": {"rouge": scoring.BootstrapAggregator(),
+               "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "size": 0},
+        "ttl": {"rouge": scoring.BootstrapAggregator(),
+                "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "size": 0},
+        "rph": {"rouge": scoring.BootstrapAggregator(),
+                "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "size": 0},
+    } if by_type else None
+
+    data_log = dict()
+
     for step in tqdm(range(0, num_batches), colour="red", desc="Inference"):
         idx = step * train_config.inference_batch_size
         [batch_inputs, batch_prompts, batch_targets, batch_instructions] = dataset.get_batch(idx, batch_size=train_config.inference_batch_size)
 
-        batch = tokenizer(batch_prompts, return_tensors="pt")
-        batch = {k: v.to("cuda") for k, v in batch.items()}
-
-        outputs = None
-        with torch.no_grad():
-            outputs = model.generate(
-                **batch,
-                max_new_tokens=train_config.inference_max_new_tokens,
-                do_sample=train_config.inference_do_sample,
-                top_p=train_config.inference_top_p,
-                temperature=train_config.inference_temperature,
-                min_length=train_config.inference_min_length,
-                use_cache=train_config.inference_use_cache,
-                top_k=train_config.inference_top_k,
-                repetition_penalty=train_config.inference_repetition_penalty,
-                length_penalty=train_config.inference_length_penalty
-            )
-
-        batch_predictions = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        batch_predictions = predict(model, tokenizer, batch_prompts, train_config)
         if len(batch_targets) != len(batch_predictions):
             print("WARNING! Batch size different:", len(batch_targets), "!=", len(batch_predictions))
             continue
 
         for idx, target in enumerate(batch_targets):
+            ins = batch_instructions[idx]
             inp = batch_inputs[idx]
             pred = batch_predictions[idx].split("### Response:")[1].strip()
             test_preds_and_targets.append((inp, target, pred))
@@ -349,6 +384,18 @@ def inference(model, train_config, dataset, tokenizer, global_step, wandb=None):
             bleu_result["bleu3"] += sentence_bleu(reference, candidate, weights=(0.33, 0.33, 0.33, 0))
             bleu_result["bleu4"] += sentence_bleu(reference, candidate, weights=(0.25, 0.25, 0.25, 0.25))
 
+            if by_type:
+                reference = [target.split(" ")]
+                candidate = pred.split(" ")
+                mode = ins.lower()
+                stats_by_type[mode]["size"] += 1
+                rouge_score_for_type = scorer.score(target, pred)
+                stats_by_type[mode]["rouge"].add_scores(rouge_score_for_type)
+                stats_by_type[mode]["bleu"]["bleu1"] += sentence_bleu(reference, candidate, weights=(1, 0, 0, 0))
+                stats_by_type[mode]["bleu"]["bleu2"] += sentence_bleu(reference, candidate, weights=(0.5, 0.5, 0, 0))
+                stats_by_type[mode]["bleu"]["bleu3"] += sentence_bleu(reference, candidate, weights=(0.33, 0.33, 0.33, 0))
+                stats_by_type[mode]["bleu"]["bleu4"] += sentence_bleu(reference, candidate, weights=(0.25, 0.25, 0.25, 0.25))
+
     rouge_result = aggregator.aggregate()
     for key in rouge_result:
         rouge_result[key] = rouge_result[key].mid.fmeasure
@@ -357,13 +404,33 @@ def inference(model, train_config, dataset, tokenizer, global_step, wandb=None):
         bleu_result[key] /= len(test_preds_and_targets)
 
     if wandb is not None:
-        wandb.log({"inference/rouge1": rouge_result["rouge1"], "inference/rouge2": rouge_result["rouge2"],
-                   "inference/rougeL": rouge_result["rougeL"], "inference/rougeLsum": rouge_result["rougeLsum"],
-                   "inference/bleu1": bleu_result["bleu1"], "inference/bleu2": bleu_result["bleu2"],
-                   "inference/bleu3": bleu_result["bleu3"], "inference/bleu4": bleu_result["bleu4"], "inference/step": global_step})
+        data_log.update({"inference/rouge1": rouge_result["rouge1"], "inference/rouge2": rouge_result["rouge2"],
+                         "inference/rougeL": rouge_result["rougeL"], "inference/rougeLsum": rouge_result["rougeLsum"],
+                         "inference/bleu1": bleu_result["bleu1"], "inference/bleu2": bleu_result["bleu2"],
+                         "inference/bleu3": bleu_result["bleu3"], "inference/bleu4": bleu_result["bleu4"], "inference/step": global_step})
 
     print("ROUGE:\n", rouge_result)
     print("BLEU:\n", bleu_result)
+
+    if by_type and stats_by_type is not None:
+
+        for mode in stats_by_type.keys():
+            if stats_by_type[mode]["size"] > 0:
+                rouge_result_for_type = stats_by_type[mode]["rouge"].aggregate()
+                for key in rouge_result:
+                    rouge_result_for_type[key] = rouge_result_for_type[key].mid.fmeasure
+                for key in stats_by_type[mode]["bleu"].keys():
+                    stats_by_type[mode]["bleu"][key] /= stats_by_type[mode]["size"]
+
+                print(mode, ": ROUGE :", rouge_result_for_type)
+                print(mode, ": BLEU :", stats_by_type[mode]["bleu"])
+
+                if wandb is not None:
+                    data_log.update({"inference/" + mode + "_rouge1": rouge_result["rouge1"], "inference/" + mode + "_rouge2": rouge_result["rouge2"],
+                                     "inference/" + mode + "_rougeL": rouge_result["rougeL"], "inference/" + mode + "_rougeLsum": rouge_result["rougeLsum"]})
+
+    if wandb is not None:
+        wandb.log(data_log)
 
 
 def freeze_transformer_layers(model, num_layer):
