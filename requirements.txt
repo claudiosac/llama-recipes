@@ -17,3 +17,11 @@ rouge-score
 nltk
 wandb
 openpyxl
+scikit-learn
+scipy
+matplotlib
+#tensorflow
+#tensorflow-hub
+#evaluate
+#tensorflow-text
+#bert_score

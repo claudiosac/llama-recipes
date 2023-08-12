@@ -38,17 +38,6 @@ def main(**kwargs):
     if test_config.peft_model is not None and test_config.peft_model != "":
         model = load_peft_model(model, test_config.peft_model)
 
-    muse_model, bertscore, bertmodel = None, None, "bert-base-multilingual-uncased"
-    bertscore = None
-    if test_config.by_type:
-        from evaluate import load
-        import tensorflow as tf
-        import tensorflow_hub as hub
-        from sklearn.metrics.pairwise import cosine_similarity as cosine
-
-        muse_model = hub.KerasLayer("https://tfhub.dev/google/universal-sentence-encoder-multilingual-large/3", trainable=False)
-        bertscore = load("bertscore")
-
     dataset_config = generate_dataset_config(test_config, kwargs)
 
     dataset_test = get_preprocessed_dataset(
@@ -56,7 +45,8 @@ def main(**kwargs):
         dataset_config,
         split="test",
         max_size=test_config.max_size,
-        by_type=test_config.by_type
+        by_type=test_config.by_type,
+        types=test_config.types
     )
     print(f"--> Test Set Length = {len(dataset_test)}")
 
@@ -68,20 +58,13 @@ def main(**kwargs):
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=False)
     aggregator = scoring.BootstrapAggregator()
     bleu_result = {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}
-    bertscore_pairs = {"ans" : [list(), list()], "rph": [list(), list()]}
 
-    stats_by_type = {
-                     "ans": {"rouge": scoring.BootstrapAggregator(),
-                             "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "bertscore": 0, "acs": 0},
-                     "sum":  {"rouge": scoring.BootstrapAggregator(),
-                              "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}},
-                     "qa":  {"rouge": scoring.BootstrapAggregator(),
-                             "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}},
-                     "ttl":  {"rouge": scoring.BootstrapAggregator(),
-                              "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}},
-                     "rph":  {"rouge": scoring.BootstrapAggregator(),
-                              "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "bertscore": 0, "acs": 0},
-                     } if test_config.by_type else None
+    stats_by_type = None
+    types = test_config.types
+    if test_config.by_type:
+        stats_by_type = dict()
+        for t in types:
+            stats_by_type[t] = {"rouge": scoring.BootstrapAggregator(), "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "size": 0}
 
     num_batches = int(len(dataset_test) / test_config.test_batch_size)
     for step in tqdm(range(0, num_batches), colour="red", desc="Test-set"):
@@ -143,17 +126,6 @@ def main(**kwargs):
                 stats_by_type[mode]["bleu"]["bleu3"] += b3
                 stats_by_type[mode]["bleu"]["bleu4"] += b4
 
-                if mode == "ans" or mode == "rph":
-                    bertscore_pairs[mode][0].append(target)
-                    bertscore_pairs[mode][1].append(pred)
-                    seq_embeddings = muse_model([target, pred])
-                    tf.reshape(seq_embeddings, [-1])
-                    embeddings = seq_embeddings.numpy()
-                    a = embeddings[0].reshape(1, -1)
-                    b = embeddings[1].reshape(1, -1)
-                    cosine_score = float(cosine(a, b)[0][0])
-                    stats_by_type[mode]["acs"] += cosine_score
-
     rouge_result = aggregator.aggregate()
     for key in rouge_result:
         rouge_result[key] = rouge_result[key].mid.fmeasure
@@ -171,45 +143,20 @@ def main(**kwargs):
     print("BLEU:\n", bleu_result)
 
     if test_config.by_type and stats_by_type is not None:
-
         for mode in stats_by_type.keys():
+            if stats_by_type[mode]["size"] > 0:
+                rouge_result_for_type = stats_by_type[mode]["rouge"].aggregate()
+                for key in rouge_result_for_type:
+                    rouge_result[key] = rouge_result_for_type[key].mid.fmeasure
+                    xlsx_sheet1["type"].append(mode)
+                    xlsx_sheet1["metric"].append(key)
+                    xlsx_sheet1["value"].append(rouge_result[key])
 
-            rouge_result_for_type = stats_by_type[mode]["rouge"].aggregate()
-            for key in rouge_result_for_type:
-                rouge_result[key] = rouge_result_for_type[key].mid.fmeasure
-                xlsx_sheet1["type"].append(mode)
-                xlsx_sheet1["metric"].append(key)
-                xlsx_sheet1["value"].append(rouge_result_for_type[key])
-
-            for key in stats_by_type[mode]["bleu"].keys():
-                stats_by_type[mode]["bleu"][key] /= stats_by_type[mode]["size"]
-                xlsx_sheet1["type"].append(mode)
-                xlsx_sheet1["metric"].append(key)
-                xlsx_sheet1["value"].append(stats_by_type[mode]["bleu"][key])
-
-            if mode == "ans" or mode == "rph":
-                bert_scores = bertscore.compute(predictions=bertscore_pairs[mode][1], references=bertscore_pairs[mode][0], model_type=bertmodel)
-
-                bert_scores["precision"] = np.average(bert_scores["precision"])
-                bert_scores["recall"] = np.average(bert_scores["recall"])
-                bert_scores["f1"] = np.average(bert_scores["f1"])
-
-                xlsx_sheet1["type"].append(mode)
-                xlsx_sheet1["metric"].append("bertscore_PR")
-                xlsx_sheet1["value"].append(bert_scores["precision"])
-
-                xlsx_sheet1["type"].append(mode)
-                xlsx_sheet1["metric"].append("bertscore_REC")
-                xlsx_sheet1["value"].append(bert_scores["recall"])
-
-                xlsx_sheet1["type"].append(mode)
-                xlsx_sheet1["metric"].append("bertscore_F1")
-                xlsx_sheet1["value"].append(bert_scores["f1"])
-
-                stats_by_type[mode]["acs"] /= stats_by_type[mode]["size"]
-                xlsx_sheet1["type"].append(mode)
-                xlsx_sheet1["metric"].append("avg_cosine_similarity")
-                xlsx_sheet1["value"].append(stats_by_type[mode]["acs"])
+                for key in stats_by_type[mode]["bleu"].keys():
+                    stats_by_type[mode]["bleu"][key] /= stats_by_type[mode]["size"]
+                    xlsx_sheet1["type"].append(mode)
+                    xlsx_sheet1["metric"].append(key)
+                    xlsx_sheet1["value"].append(stats_by_type[mode]["bleu"][key])
 
         print(stats_by_type)
 

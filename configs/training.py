@@ -45,6 +45,7 @@ class train_config:
     inference_max_size: int = 100  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
     inference_max_new_tokens: int = 384  # The maximum numbers of tokens to generate
     inference_by_type: bool = False  # combinato con max_size determina quanti esempi considerare per ciascun tipo di instruction
+    inference_types: tuple = ("ans", "qa", "sum")
     inference_do_sample: bool = True  # Whether or not to use sampling ; use greedy decoding otherwise.
     inference_min_length: int = None  # The minimum length of the sequence to be generated, input prompt + min_new_tokens
     inference_use_cache: bool = True  # [optional] Whether or not the model should use the past last key/values attentions Whether or not the model should use the past last key/values attentions (if applicable to the model) to speed up decoding.

@@ -27,7 +27,7 @@ PROMPT_DICT = {
 
 
 class InstructionDataset(Dataset):
-    def __init__(self, dataset_config, tokenizer, partition="train", max_words=768, max_size=-1, by_type=False, shuffle=False):
+    def __init__(self, dataset_config, tokenizer, partition="train", max_words=768, max_size=-1, by_type=False, types=None, shuffle=False):
         self.ann = json.load(open(dataset_config.data_path))
         if partition == "train":
             self.ann = self.ann["train"]

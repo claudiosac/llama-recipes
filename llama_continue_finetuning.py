@@ -201,7 +201,8 @@ def main(**kwargs):
         dataset_config,
         split="inference",
         max_size=train_config.inference_max_size,
-        by_type=train_config.inference_by_type
+        by_type=train_config.inference_by_type,
+        types=train_config.inference_types
     )
 
     train_sampler = None

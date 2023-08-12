@@ -29,8 +29,8 @@ PROMPT_DICT = {
 
 
 class InstructionDataset(Dataset):
-    def __init__(self, dataset_config, tokenizer, partition="train", max_words=512, max_size=-1, by_type=False, shuffle=False):
-        print("Loading dataset: " + dataset_config.data_path + " (max_words=" + str(max_words) + ", split=" + partition + ", by_type=" + str(by_type) + ")")
+    def __init__(self, dataset_config, tokenizer, partition="train", max_words=512, max_size=-1, by_type=False, types=None, shuffle=False):
+        print("Loading dataset: " + dataset_config.data_path + " (max_words=" + str(max_words) + ", split=" + partition + ", by_type=" + str(by_type) + ", types=" + str(types) + ")")
         self.ann = json.load(open(dataset_config.data_path))
         if partition == "train":
             self.ann = self.ann["train"]
@@ -39,13 +39,15 @@ class InstructionDataset(Dataset):
         elif partition == "test":
             self.ann = self.ann["test"]
 
-        types = ["ans", "qa", "sum", "ttl", "rph"]
+        types_to_use = ["ans", "qa", "sum", "ttl", "rph"] if types is None else list(types)
 
         if by_type:
-            data_by_type = {el: list for el in types}
+            data_by_type = dict()
+            for eltype in types_to_use:
+                data_by_type[eltype] = list()
             for el in self.ann:
                 eltype = self.get_type(el)
-                if eltype in types:
+                if eltype in types_to_use:
                     if len(data_by_type[eltype]) < max_size:
                         data_by_type[eltype].append(el)
 
