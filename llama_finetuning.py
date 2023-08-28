@@ -199,6 +199,7 @@ def main(**kwargs):
         collate_fn=default_data_collator,
     )
 
+    eval_dataloader = None
     if train_config.run_validation:
         eval_dataloader = torch.utils.data.DataLoader(
             dataset_val,
@@ -227,9 +228,9 @@ def main(**kwargs):
         )
     scheduler = StepLR(optimizer, step_size=1, gamma=train_config.gamma)
 
-    wandb_project = "llama-2-7b-8bit-qiinstructita"
+    wandb_project = "llama-2-7b-8bit-qirphita"
     wandb_config = {"learning_rate": train_config.lr, "architecture": "LLAMA-2-7B-8bit",
-                    "dataset": "QIINSTRUCTITA", "epochs": train_config.num_epochs}
+                    "dataset": "QIRPHITA", "epochs": train_config.num_epochs}
     wandb = {"id": None, "proj": wandb_project, "config": wandb_config}
 
     wdb.login()

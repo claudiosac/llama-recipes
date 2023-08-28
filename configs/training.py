@@ -8,7 +8,7 @@ from typing import ClassVar
 class train_config:
     model_name: str="/mnt/data/models/LLaMA2/7B_hf"
     enable_fsdp: bool= False 
-    run_validation: bool=True
+    run_validation: bool=False
     batch_size_training: int=16
     num_epochs: int=3
     num_workers_dataloader: int=4
@@ -18,7 +18,7 @@ class train_config:
     seed: int=42
     use_fp16: bool=True
     mixed_precision: bool=True
-    val_batch_size: int=3
+    val_batch_size: int=2
     dataset = "qirphita_dataset"
     micro_batch_size: int=2
     peft_method: str = "lora" # None , llama_adapter, prefix
@@ -33,7 +33,7 @@ class train_config:
     dist_checkpoint_folder: str="fine-tuned" # will be used if using FSDP
     save_optimizer: bool=False # will be used if using FSDP
     #
-    checkpoint: str = "PATH/to/checkpoint"  # checkpoint must contain peft adapter e model.pkl
+    checkpoint: str = "/mnt/data/training_results/llama2-7b-8bit-qirphita/checkpoint_1.8074.8074"  # checkpoint must contain peft adapter e model.pkl
     log_interval: int = 10    # numero effetivo di steps di intervallo ->  (batch_size/micro_batch_size) * log_interval
     save_interval: int = 100  # numero effetivo di steps di intervallo ->  (batch_size/micro_batch_size) * save_interval
     eval_log_interval: int = 500  # intervallo effettivo di step per il log durante l'evaluation

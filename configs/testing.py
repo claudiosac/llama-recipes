@@ -8,11 +8,11 @@ class test_config:
     dataset: str = "qiinstructita_dataset"
     test_batch_size: int = 1   # > 1 not working, needs padding for inputs with different size in batch
     num_workers_dataloader: int = 4
-    peft_model: str = "/mnt/data/training_results/llama2-7b-8bit-qiinstructita/checkpoint_1.8400.8400"
+    peft_model: str = "/mnt/data/training_results/llama2-7b-8bit-qiinstructita/checkpoint_1.9100.9100"
     quantization: bool = True
     summary_file: str = peft_model + "/summary.xlsx"
     seed: int = 42  # seed value for reproducibility
-    max_new_tokens: int = 384  # The maximum numbers of tokens to generate
+    max_new_tokens: int = 256  # The maximum numbers of tokens to generate
     do_sample: bool = True  # Whether or not to use sampling ; use greedy decoding otherwise.
     min_length: int = None  # The minimum length of the sequence to be generated, input prompt + min_new_tokens
     use_cache: bool = True  # [optional] Whether or not the model should use the past last key/values attentions Whether or not the model should use the past last key/values attentions (if applicable to the model) to speed up decoding.
