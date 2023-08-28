@@ -6,8 +6,8 @@ from typing import ClassVar
 
 @dataclass
 class train_config:
-    model_name: str="/mnt/data/models/LLaMA2/7B_hf"
-    enable_fsdp: bool= False 
+    model_name: str="/home/sacca/data/models/7B_hf"
+    enable_fsdp: bool= False
     run_validation: bool=False
     batch_size_training: int=16
     num_epochs: int=3
@@ -18,12 +18,12 @@ class train_config:
     seed: int=42
     use_fp16: bool=True
     mixed_precision: bool=True
-    val_batch_size: int=2
-    dataset = "qirphita_dataset"
+    val_batch_size: int=12
+    dataset = "qiinstructita_dataset"
     micro_batch_size: int=2
     peft_method: str = "lora" # None , llama_adapter, prefix
     use_peft: bool=True
-    output_dir: str = "/mnt/data/training_results/llama2-7b-8bit-qirphita"
+    output_dir: str = "/home/sacca/data/results/llama-2-7b-8bit_p2"
     freeze_layers: bool = False
     num_freeze_layers: int = 1
     quantization: bool = True
@@ -40,10 +40,12 @@ class train_config:
     train_max_size: int = -1  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
     valid_max_size: int = -1  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
     #
-    inference_interval: int = 300  # numero effetivo di steps di intervallo ->  (batch_size/micro_batch_size) * inference_interval (meglio che sia un multiplo di save_interval)
+    inference_interval: int = 700  # numero effetivo di steps di intervallo ->  (batch_size/micro_batch_size) * inference_interval (meglio che sia un multiplo di save_interval)
     inference_batch_size: int = 1  # > 1 not working, needs padding for inputs with different size in batch
-    inference_max_size: int = 200  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
-    inference_max_new_tokens: int = 256  # The maximum numbers of tokens to generate
+    inference_max_size: int = 100  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
+    inference_max_new_tokens: int = 384  # The maximum numbers of tokens to generate
+    inference_by_type: bool = False  # combinato con max_size determina quanti esempi considerare per ciascun tipo di instruction
+    inference_types: tuple = ("ans", "qa", "sum")
     inference_do_sample: bool = True  # Whether or not to use sampling ; use greedy decoding otherwise.
     inference_min_length: int = None  # The minimum length of the sequence to be generated, input prompt + min_new_tokens
     inference_use_cache: bool = True  # [optional] Whether or not the model should use the past last key/values attentions Whether or not the model should use the past last key/values attentions (if applicable to the model) to speed up decoding.

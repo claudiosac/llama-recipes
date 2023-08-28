@@ -31,7 +31,7 @@ DATASET_PREPROC = {
 
 
 def get_preprocessed_dataset(
-    tokenizer, dataset_config, split: str = "train", max_size: int = -1
+    tokenizer, dataset_config, split: str = "train", max_size: int = -1, by_type=False, types=None, shuffle=False
 ) -> torch.utils.data.Dataset:
     if not dataset_config.dataset in DATASET_PREPROC:
         raise NotImplementedError(f"{dataset_config.dataset} is not (yet) implemented")
@@ -49,5 +49,9 @@ def get_preprocessed_dataset(
         dataset_config,
         tokenizer,
         get_split(),
+        max_words=dataset_config.max_words,
         max_size=max_size,
+        by_type=by_type,
+        types=types,
+        shuffle=shuffle
     )

@@ -5,6 +5,7 @@ import copy
 # from accelerate import init_empty_weights, load_checkpoint_and_dispatch
 
 import fire
+import numpy as np
 import torch
 import os
 import sys
@@ -43,7 +44,9 @@ def main(**kwargs):
         tokenizer,
         dataset_config,
         split="test",
-        max_size=200,
+        max_size=test_config.max_size,
+        by_type=test_config.by_type,
+        types=test_config.types
     )
     print(f"--> Test Set Length = {len(dataset_test)}")
 
@@ -51,10 +54,17 @@ def main(**kwargs):
 
     model.eval()
 
-    xlsx_sheet1, xlsx_sheet2 = {"metric": list(), "value": list()}, {"instruction": list(), "input": list(), "target": list(), "prediction": list()}
+    xlsx_sheet1, xlsx_sheet2 = {"type": list(), "metric": list(), "value": list()}, {"instruction": list(), "input": list(), "target": list(), "prediction": list()}
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=False)
-    bleu_result = {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}
     aggregator = scoring.BootstrapAggregator()
+    bleu_result = {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}
+
+    stats_by_type = None
+    types = test_config.types
+    if test_config.by_type:
+        stats_by_type = dict()
+        for t in types:
+            stats_by_type[t] = {"rouge": scoring.BootstrapAggregator(), "bleu": {"bleu1": 0, "bleu2": 0, "bleu3": 0, "bleu4": 0}, "size": 0}
 
     num_batches = int(len(dataset_test) / test_config.test_batch_size)
     for step in tqdm(range(0, num_batches), colour="red", desc="Test-set"):
@@ -92,31 +102,63 @@ def main(**kwargs):
             xlsx_sheet2["input"].append(inp)
             xlsx_sheet2["target"].append(target)
             xlsx_sheet2["prediction"].append(pred)
+
             score = scorer.score(target, pred)
             aggregator.add_scores(score)
             reference = [target.split(" ")]
             candidate = pred.split(" ")
-            bleu_result["bleu1"] += sentence_bleu(reference, candidate, weights=(1, 0, 0, 0))
-            bleu_result["bleu2"] += sentence_bleu(reference, candidate, weights=(0.5, 0.5, 0, 0))
-            bleu_result["bleu3"] += sentence_bleu(reference, candidate, weights=(0.33, 0.33, 0.33, 0))
-            bleu_result["bleu4"] += sentence_bleu(reference, candidate, weights=(0.25, 0.25, 0.25, 0.25))
-            #print("P:", pred)
-            #print("T:", target)
-            #print(score, bleu_result)
+            b1 = sentence_bleu(reference, candidate, weights=(1, 0, 0, 0))
+            b2 = sentence_bleu(reference, candidate, weights=(0.5, 0.5, 0, 0))
+            b3 = sentence_bleu(reference, candidate, weights=(0.33, 0.33, 0.33, 0))
+            b4 = sentence_bleu(reference, candidate, weights=(0.25, 0.25, 0.25, 0.25))
+
+            bleu_result["bleu1"] += b1
+            bleu_result["bleu2"] += b2
+            bleu_result["bleu3"] += b3
+            bleu_result["bleu4"] += b4
+
+            if test_config.by_type:
+                mode = ins.lower()
+                stats_by_type[mode]["size"] += 1
+                stats_by_type[mode]["rouge"].add_scores(score)
+                stats_by_type[mode]["bleu"]["bleu1"] += b1
+                stats_by_type[mode]["bleu"]["bleu2"] += b2
+                stats_by_type[mode]["bleu"]["bleu3"] += b3
+                stats_by_type[mode]["bleu"]["bleu4"] += b4
 
     rouge_result = aggregator.aggregate()
     for key in rouge_result:
         rouge_result[key] = rouge_result[key].mid.fmeasure
+        xlsx_sheet1["type"].append("OVERALL")
         xlsx_sheet1["metric"].append(key)
         xlsx_sheet1["value"].append(rouge_result[key])
 
     for key in bleu_result.keys():
-        bleu_result[key] /= len(xlsx_sheet2)
+        bleu_result[key] /= len(xlsx_sheet2["input"])
+        xlsx_sheet1["type"].append("OVERALL")
         xlsx_sheet1["metric"].append(key)
         xlsx_sheet1["value"].append(bleu_result[key])
 
-    print(rouge_result)
-    print(bleu_result)
+    print("ROUGE:\n", rouge_result)
+    print("BLEU:\n", bleu_result)
+
+    if test_config.by_type and stats_by_type is not None:
+        for mode in stats_by_type.keys():
+            if stats_by_type[mode]["size"] > 0:
+                rouge_result_for_type = stats_by_type[mode]["rouge"].aggregate()
+                for key in rouge_result_for_type:
+                    rouge_result[key] = rouge_result_for_type[key].mid.fmeasure
+                    xlsx_sheet1["type"].append(mode)
+                    xlsx_sheet1["metric"].append(key)
+                    xlsx_sheet1["value"].append(rouge_result[key])
+
+                for key in stats_by_type[mode]["bleu"].keys():
+                    stats_by_type[mode]["bleu"][key] /= stats_by_type[mode]["size"]
+                    xlsx_sheet1["type"].append(mode)
+                    xlsx_sheet1["metric"].append(key)
+                    xlsx_sheet1["value"].append(stats_by_type[mode]["bleu"][key])
+
+        print(stats_by_type)
 
     df1 = pd.DataFrame(xlsx_sheet1)
     df2 = pd.DataFrame(xlsx_sheet2)

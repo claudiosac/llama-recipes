@@ -12,7 +12,10 @@ class test_config:
     quantization: bool = True
     summary_file: str = peft_model + "/summary.xlsx"
     seed: int = 42  # seed value for reproducibility
-    max_new_tokens: int = 256  # The maximum numbers of tokens to generate
+    max_new_tokens: int = 384  # The maximum numbers of tokens to generate
+    max_size: int = 200  # prende i primi N dati del dataset intero, per fare più veloce (-1 prende tutto)
+    by_type: bool = False  # combinato con max_size determina quanti esempi considerare per ciascun tipo di instruction
+    types: tuple = ("ans", "qa", "sum")
     do_sample: bool = True  # Whether or not to use sampling ; use greedy decoding otherwise.
     min_length: int = None  # The minimum length of the sequence to be generated, input prompt + min_new_tokens
     use_cache: bool = True  # [optional] Whether or not the model should use the past last key/values attentions Whether or not the model should use the past last key/values attentions (if applicable to the model) to speed up decoding.
