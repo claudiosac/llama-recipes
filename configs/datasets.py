@@ -54,8 +54,8 @@ class qiinstructita_dataset:
     train_split: str = "train"
     test_split: str = "valid"
     inference_split: str = "test"
-    max_words: int = 2048
-    data_path: str = "/home/sacca/data/datasets/qiinstructita_data." + str(max_words) + ".json" if max_words > 0 else "/home/sacca/data/datasets/qiinstructita_data.json"
+    max_words: int = 1024
+    data_path: str = "/mnt/data/qi_datasets/qiinstructita_data.v3." + str(max_words) + ".json" if max_words > 0 else "/home/sacca/data/datasets/qiinstructita_data.json"
 
 
 @dataclass
