@@ -5,7 +5,7 @@ import os
 import sys
 import math
 from typing import List
-
+import shutil
 import fire
 import torch
 import transformers
@@ -136,11 +136,11 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                         path_to_save = train_config.output_dir + "/last_checkpoint"
                         if os.path.exists(path_to_save):
-                            os.remove(path_to_save)
-                        model.save_pretrained(save_path)
+                            shutil.rmtree(path_to_save)
+                        model.save_pretrained(path_to_save)
                         torch.save({'epoch': epoch + 1, 'step': step + 1, 'optimizer_state_dict': optimizer.state_dict(),
                                     'loss': total_loss / (step + 1), 'scheduler': lr_scheduler.state_dict(), 'scaler': scaler.state_dict()},
-                                   save_path + "/checkpoint.pkl")
+                                   path_to_save + "/checkpoint.pkl")
 
                         if wandb is not None and ((step + 1) % (gradient_accumulation_steps * train_config.log_interval) == 0 or step == len(train_dataloader) - 1):
                             loss_value = loss.detach().float().item()
@@ -186,7 +186,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                     save_path = train_config.output_dir + "/checkpoint_" + str(epoch+1) + "." + str(step+1) + "." + str((step+1)+(epoch*len(train_dataloader)))
                     model.save_pretrained(save_path)
 
-                    torch.save({'epoch': epoch+1, 'step': step+1, 'model_state_dict': model.state_dict()}, save_path + "/model.pkl")
+                    #torch.save({'epoch': epoch+1, 'step': step+1, 'model_state_dict': model.state_dict()}, save_path + "/model.pkl")
                     torch.save({'epoch': epoch+1, 'step': step+1, 'optimizer_state_dict': optimizer.state_dict(),
                                 'loss': total_loss/(step + 1),
                                 'scheduler': lr_scheduler.state_dict(), 'scaler': scaler.state_dict()},
