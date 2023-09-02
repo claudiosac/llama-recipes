@@ -195,7 +195,8 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
         # Reducing total_loss across all devices if there's more than one CUDA device
         if torch.cuda.device_count() > 1 and train_config.enable_fsdp:
             dist.all_reduce(total_loss, op=dist.ReduceOp.SUM)
-        train_epoch_loss = total_loss / data_set_len
+
+        train_epoch_loss = total_loss / data_set_len if data_set_len > 0 else torch.tensor(total_loss, dtype=torch.float)
         train_perplexity = torch.exp(train_epoch_loss)
         
         train_prep.append(train_perplexity)
