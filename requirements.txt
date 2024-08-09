@@ -20,8 +20,8 @@ openpyxl
 scikit-learn
 scipy
 matplotlib
-#tensorflow
-#tensorflow-hub
+#tensorflow==2.8.4
+#tensorflow-hub==0.14.0
 #evaluate
-#tensorflow-text
+#tensorflow-text==2.8.1
 #bert_score
